@@ -14,7 +14,7 @@ The authors introduce a **dynamic occupation model** that accounts for player **
 
 The paper proposes two ways to measure who controls a specific point on the court:
 
-1. **Static Model ($\delta_{space}$):** Based purely on **distance**. It calculates the difference between the distance to the closest defender and the distance to the shooter8.
+1. **Static Model ($\delta_{space}$):** Based purely on **distance**. It calculates the difference between the distance to the closest defender and the distance to the shooter.
     
 2. **Dynamic Model ($\delta_{time}$):** Based on **time**. It calculates the difference between the time it takes for the defender to reach a point versus the shooter, accounting for their current speed and direction (inertia).
     
@@ -23,7 +23,7 @@ The paper proposes two ways to measure who controls a specific point on the cour
 ### **3. Key Findings**
 
 #### Free space evolution before 3pt
-Catch and shoot requires times to receive and shoot while pullups is only time to shoot.catch and shoot curves free space always decreases after shot in pullups it oscillates
+Catch and shoot requires times to receive and shoot while pullups is only time to shoot. atch and shoot curves free space always decreases after shot in pullups it oscillates
 #### **The "Inertia Lag" (Reaction Time)**
 
 By comparing the Static and Dynamic models, the authors quantified the "delay" in defensive reaction.
