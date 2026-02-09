@@ -11,60 +11,13 @@
             "id": "677485403c6dbf6c",
             "type": "leaf",
             "state": {
-              "type": "markdown",
-              "state": {
-                "file": "Review EPV MIT.md",
-                "mode": "source",
-                "source": false
-              },
+              "type": "empty",
+              "state": {},
               "icon": "lucide-file",
-              "title": "Review EPV MIT"
-            }
-          },
-          {
-            "id": "ca788a21ccd23143",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "Review Lyon3pt.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "Review Lyon3pt"
-            }
-          },
-          {
-            "id": "3e9012326b5dfdae",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "Review EPV Harvard.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "Review EPV Harvard"
-            }
-          },
-          {
-            "id": "89061ab1007b8196",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "Value table.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "Value table"
+              "title": "New tab"
             }
           }
-        ],
-        "currentTab": 3
+        ]
       }
     ],
     "direction": "vertical"
@@ -212,32 +165,44 @@
       "bases:Create new base": false
     }
   },
-  "active": "89061ab1007b8196",
+  "active": "677485403c6dbf6c",
   "lastOpenFiles": [
-    "EPV HARVARD.md",
-    "Value table.md",
-    "Review EPV Harvard.md",
-    "Review Lyon3pt.md",
-    "Review EPV MIT.md",
-    "Transforming basketball.md",
-    "Thinking Basketball.md",
-    "Steph gravity.md",
-    "SIQ.md",
-    "Retro-planning.md",
-    "README.md",
-    "Podcast notes.md",
-    "MIT SLOAN SPORTS ANALYTICS CONFERENCE.md",
-    "Literature review.md",
-    "KUL Sports Analytics.md",
-    "Inpredictable.md",
-    "EPV Possible Improvements.md",
-    "EPV MIT.md",
-    "EPV IDEA.md",
-    "Datasets.md",
+    "pbpevents.txt",
+    "game.py",
+    "allgames.txt",
+    "velocity_analysis.py",
+    "spacing_analysis.py",
+    "scrape_games.py",
+    "5_Fatigue-Speed.ipynb",
+    "game/__pycache__/game.cpython-311.pyc",
+    "game/__pycache__",
+    "game/velocity_analysis.py",
+    "game/spacing_analysis.py",
     "EPV Dashboard.md",
-    "TFM-KUL-Juan/README.md",
-    "TFM-KUL-Juan",
-    "Untitled.md",
+    "literature/EPV HARVARD.md",
+    "literature/EPV Dashboard.md",
+    "literature/Datasets.md",
+    "literature/Literature review.md",
+    "literature/KUL Sports Analytics.md",
+    "literature/Inpredictable.md",
+    "literature/Individual_sensors_privacy.md",
+    "literature/EPV Possible Improvements.md",
+    "literature/EPV MIT.md",
+    "literature/EPV IDEA.md",
+    "literature/SIQ.md",
+    "literature/Review Lyon3pt.md",
+    "literature/Review EPV MIT.md",
+    "literature/Review EPV Harvard.md",
+    "literature/Retro-planning.md",
+    "literature/README.md",
+    "literature/Privacy solutions.md",
+    "literature/Podcast notes.md",
+    "literature/New NBA Stats AWS.md",
+    "literature/MIT SLOAN SPORTS ANALYTICS CONFERENCE.md",
+    "literature/Value table.md",
+    "literature/Transforming basketball.md",
+    "literature/Thinking Basketball.md",
+    "literature/Steph gravity.md",
     "images/Pasted image 20251125195541.png",
     "images/Pasted image 20251125194940.png",
     "images/Pasted image 20251125183835.png",
@@ -248,10 +213,6 @@
     "images/Pasted image 20251125173117.png",
     "images/Pasted image 20251125172917.png",
     "images/Pasted image 20251125154536.png",
-    "2025-11-18.md",
-    "Untitled.canvas",
-    "images",
-    "Welcome.md",
-    "desktop.ini"
+    "Untitled.canvas"
   ]
 }
