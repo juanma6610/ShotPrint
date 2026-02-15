@@ -11,10 +11,14 @@
             "id": "677485403c6dbf6c",
             "type": "leaf",
             "state": {
-              "type": "empty",
-              "state": {},
+              "type": "markdown",
+              "state": {
+                "file": "literature/Datasets.md",
+                "mode": "source",
+                "source": false
+              },
               "icon": "lucide-file",
-              "title": "New tab"
+              "title": "Datasets"
             }
           }
         ]
@@ -167,17 +171,27 @@
   },
   "active": "677485403c6dbf6c",
   "lastOpenFiles": [
-    "pbpevents.txt",
-    "game.py",
-    "allgames.txt",
-    "velocity_analysis.py",
-    "spacing_analysis.py",
-    "scrape_games.py",
-    "5_Fatigue-Speed.ipynb",
-    "game/__pycache__/game.cpython-311.pyc",
-    "game/__pycache__",
-    "game/velocity_analysis.py",
-    "game/spacing_analysis.py",
+    "temp/57796.mp4",
+    "temp/58040.png",
+    "temp/58039.png",
+    "temp/58038.png",
+    "temp/58037.png",
+    "temp/58036.png",
+    "temp/58035.png",
+    "temp/58034.png",
+    "temp/58033.png",
+    "temp/58032.png",
+    "temp/58031.png",
+    "temp/1880.mp4",
+    "temp/1858.mp4",
+    "temp/147.mp4",
+    "temp/103.mp4",
+    "temp/55.mp4",
+    "temp/videos53958.mp4",
+    "temp/videos53284.mp4",
+    "temp/videos4103.mp4",
+    "temp/videos2985.mp4",
+    "temp/videos1356.mp4",
     "EPV Dashboard.md",
     "literature/EPV HARVARD.md",
     "literature/EPV Dashboard.md",
@@ -203,16 +217,6 @@
     "literature/Transforming basketball.md",
     "literature/Thinking Basketball.md",
     "literature/Steph gravity.md",
-    "images/Pasted image 20251125195541.png",
-    "images/Pasted image 20251125194940.png",
-    "images/Pasted image 20251125183835.png",
-    "images/Pasted image 20251125182816.png",
-    "images/Pasted image 20251125175732.png",
-    "images/Pasted image 20251125175424.png",
-    "images/Pasted image 20251125173204.png",
-    "images/Pasted image 20251125173117.png",
-    "images/Pasted image 20251125172917.png",
-    "images/Pasted image 20251125154536.png",
     "Untitled.canvas"
   ]
 }

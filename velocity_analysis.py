@@ -10,8 +10,8 @@ import seaborn as sns
 import pandas as pd
 from game import Game
 
-# Initialize Project
-os.chdir('~/Desktop/Personal/SportVU/NBA-player-movement')
+# # Initialize Project
+# os.chdir('~/Desktop/Personal/SportVU/NBA-player-movement')
 
 
 def extract_games():
@@ -42,7 +42,7 @@ def calculate_velocities(game, frame, highlight_player=None):
     Args:
         game (Game): Game instance to get data from
         frame_number (int): number of frame in game to calculate velocities
-            frame_number gets player tracking data from moments.ix[frame]
+            frame_number gets player tracking data from moments.iloc[frame]
         highlight_player (str): Name of player to calculate velocity of.
             if None, cumulative team velocities are calculated.
 
@@ -100,7 +100,7 @@ def plot_velocity_frame(game, frame_number, ax, highlight_player=None):
         game (Game): Game instance to get data from
         frame_number (int): number of frame in game to create
             frame_number gets player tracking data from
-            moments.ix[frame_number]
+            moments.iloc[frame_number]
         highlight_player (str): Name of player to highlight (by making
             their outline thicker).
             if None, no player is highlighted
@@ -277,7 +277,7 @@ def get_velocity_statistics(date, home_team, away_team, write_file=False,
         pickle.dump(results, open('data/velocity/' + filename + '.p', "wb"))
     # Write game scores to disk
     if write_score:
-        score = game.pbp['SCORE'].ix[len(game.pbp) - 1]
+        score = game.pbp['SCORE'].iloc[len(game.pbp) - 1]
         pickle.dump(score, open('data/score/' + filename + '.p', "wb"))
 
     return (home_offense_velocities, home_defense_velocities,

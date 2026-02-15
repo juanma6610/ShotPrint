@@ -8,8 +8,14 @@ matplotlib.use('TkAgg')
 import os
 import warnings
 import json
-from subprocess import Popen, PIPE
+import time
+import urllib.request
+import py7zr
 import pandas as pd
+import shutil
+import sys
+import subprocess
+from subprocess import Popen, PIPE
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle, Rectangle, Arc, Polygon
 import numpy as np
@@ -17,9 +23,9 @@ import seaborn as sns
 from scipy.spatial import ConvexHull
 
 # Initialize project
-os.system('mkdir temp')
-datalink = None
-curl_request = None
+if not os.path.exists('temp'):
+    os.makedirs('temp', exist_ok=True)
+datalink = "https://raw.githubusercontent.com/sealneaward/nba-movement-data/master/data/01.13.2016.GSW.at.DEN.7z"
 
 
 class Game(object):
@@ -85,6 +91,7 @@ class Game(object):
         self._get_playbyplay_data()
         self._format_tracking_data()
         self._get_player_ids()
+        self._get_player_jerseys()
         self.away_id = self.tracking_data['events'][0]['visitor']['teamid']
         self.home_id = self.tracking_data['events'][0]['home']['teamid']
         self.team_colors = {-1: "orange",
@@ -103,14 +110,35 @@ class Game(object):
         Helper function for retrieving tracking data
         Tracking Data is provided by NBA.com,
         hosted at: https://www.github.com/neilmj
+        Update it is hosted now on https://github.com/sealneaward/nba-movement-data/tree/master
         """
         # Retrive and extract Data into /temp folder
 
-        os.system(("curl {datalink} -o temp/zipdata"
-                   .format(datalink=datalink)))
-        os.system("7za -o./temp x temp/zipdata")
-        os.remove("./temp/zipdata")
-
+        # Download the 7z file using urllib (cross-platform)
+        print(f"Downloading data from {datalink}...")
+        urllib.request.urlretrieve(datalink, "temp/game.7z")
+        print("Download complete. Extracting...")
+        
+        # Extract using py7zr (pure Python implementation)
+        with py7zr.SevenZipFile("temp/game.7z", mode='r') as archive:
+            archive.extractall(path="temp")
+        print("Extraction complete.")
+        
+        # Wait a moment for file handles to be released (Windows issue)
+        time.sleep(0.5)
+        
+        # Try to remove the 7z file with retry logic
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                os.remove("temp/game.7z")
+                break
+            except (PermissionError, FileNotFoundError):
+                if attempt < max_retries - 1:
+                    time.sleep(1)
+                else:
+                    print("Warning: Could not delete temp/game.7z. You may need to delete it manually.")
+        
         # Extract game ID from extracted file name.
         for file in os.listdir('./temp'):
             if os.path.splitext(file)[1] == '.json':
@@ -129,15 +157,17 @@ class Game(object):
         This service is likely to go down at any moment and ruin this
         whole project.
         """
-        os.system(curl_request)
+        # Download play-by-play data from GitHub
+        pbp_link = "https://raw.githubusercontent.com/sealneaward/nba-movement-data/master/data/events/{self.game_id}.csv".format(self=self)
+        pbp_filename = "temp/{self.game_id}_events.csv".format(self=self)
+        
+        print(f"Downloading play-by-play data from {pbp_link}...")
+        urllib.request.urlretrieve(pbp_link, pbp_filename)
+        print("Play-by-play download complete.")
+        
         # load play by play into pandas DataFrame
-        with open(("{cwd}/temp/pbp_{self.game_id}.json"
-                   .format(cwd=os.getcwd(), self=self))) as json_file:
-            parsed = json.load(json_file)['resultSets'][0]
-        os.remove(("{cwd}/temp/pbp_{self.game_id}.json"
-                   .format(cwd=os.getcwd(), self=self)))
-        self.pbp = pd.DataFrame(parsed['rowSet'])
-        self.pbp.columns = parsed['headers']
+        self.pbp = pd.read_csv(pbp_filename)
+        os.remove(pbp_filename)
 
         # Get time in quarter reamining to cross-reference tracking data
         self.pbp['Qmin'] = (self.pbp['PCTIMESTRING'].str
@@ -151,7 +181,7 @@ class Game(object):
 
         # Format score so that it makes sense: 'XX-XX'
         self.pbp['SCORE'] = (self.pbp['SCORE']
-                             .fillna(method='ffill')
+                             .ffill()
                              .fillna('0 - 0'))
         return self
 
@@ -169,13 +199,27 @@ class Game(object):
                 ids[row['PLAYER2_NAME']] = row['PLAYER2_ID']
             if row['PLAYER3_NAME'] not in ids:
                 ids[row['PLAYER3_NAME']] = row['PLAYER3_ID']
-        ids.pop(None)
+        ids.pop(None, None)  # Remove None key if it exists, otherwise do nothing
         self.player_ids = ids
+        return self
+
+    def _get_player_jerseys(self):
+        """
+        Helper function for returning player jerseys for all players in game.
+        """
+        jerseys = {}
+        # Combine home and away players
+        # The structure is assumed to be self.tracking_data['events'][0]['home']['players'] based on standard SportVU data
+        players = (self.tracking_data['events'][0]['home']['players'] +
+                   self.tracking_data['events'][0]['visitor']['players'])
+        for player in players:
+            jerseys[player['playerid']] = player['jersey']
+        self.player_jerseys = jerseys
         return self
 
     def _format_tracking_data(self):
         """
-        Heler function to format tracking data into pandas DataFrame
+        Helper function to format tracking data into pandas DataFrame
         """
         events = pd.DataFrame(self.tracking_data['events'])
         moments = []
@@ -203,55 +247,113 @@ class Game(object):
         S. Tjortjoglou: http://savvastjortjoglou.com/nba-shot-sharts.html
         M. Wheelock: https://www.linkedin.com/in/michael-s-wheelock-a5635a66
         """
+        line_color="black"
+        floor_color="#EAD16E"
+        general_floor_color="#C7A04C"
+        paint_color="#D6606D"
         ax = plt.gca()
 
         # Create the court lines
-        outer = Rectangle((0, -50), width=94, height=50, color=color,
-                          zorder=zorder, fill=False, lw=lw)
+        # outer = Rectangle((0, -50), width=94, height=50, facecolor=floor_color,
+        #                   edgecolor=line_color, zorder=zorder, lw=lw)
+        
+        # l_hoop = Circle((5.35, -25), radius=.75, lw=lw, fill=False,
+        #                 color=color, zorder=zorder)
+        # r_hoop = Circle((88.65, -25), radius=.75, lw=lw, fill=False,
+        #                 color=color, zorder=zorder)
+        # l_backboard = Rectangle((4, -28), 0, 6, lw=lw, color=color,
+        #                         zorder=zorder)
+        # r_backboard = Rectangle((90, -28), 0, 6, lw=lw, color=color,
+        #                         zorder=zorder)
+        # l_outer_box = Rectangle((0, -33), 19, 16, lw=lw, fill=False,
+        #                         color=color, zorder=zorder)
+        # l_inner_box = Rectangle((0, -31), 19, 12, lw=lw, fill=False,
+        #                         color=color, zorder=zorder)
+        # r_outer_box = Rectangle((75, -33), 19, 16, lw=lw, fill=False,
+        #                         color=color, zorder=zorder)
+        # r_inner_box = Rectangle((75, -31), 19, 12, lw=lw, fill=False,
+        #                         color=color, zorder=zorder)
+        # l_free_throw = Circle((19, -25), radius=6, lw=lw, fill=False,
+        #                       color=color, zorder=zorder)
+        # r_free_throw = Circle((75, -25), radius=6, lw=lw, fill=False,
+        #                       color=color, zorder=zorder)
+        # l_corner_a = Rectangle((0, -3), 14, 0, lw=lw, color=color,
+        #                        zorder=zorder)
+        # l_corner_b = Rectangle((0, -47), 14, 0, lw=lw, color=color,
+        #                        zorder=zorder)
+        # r_corner_a = Rectangle((80, -3), 14, 0, lw=lw, color=color,
+        #                        zorder=zorder)
+        # r_corner_b = Rectangle((80, -47), 14, 0, lw=lw, color=color,
+        #                        zorder=zorder)
+        # l_arc = Arc((5, -25), 47.5, 47.5, theta1=292, theta2=68, lw=lw,
+        #             color=color, zorder=zorder)
+        # r_arc = Arc((89, -25), 47.5, 47.5, theta1=112, theta2=248,
+        #             lw=lw, color=color, zorder=zorder)
+        # half_court = Rectangle((47, -50), 0, 50, lw=lw, color=color,
+        #                        zorder=zorder)
+        # hc_big_circle = Circle((47, -25), radius=6, lw=lw, fill=False,
+        #                        color=color, zorder=zorder)
+        # hc_sm_circle = Circle((47, -25), radius=2, lw=lw, fill=False,
+        #                       color=color, zorder=zorder)
+        # court_elements = [l_hoop, l_backboard, l_outer_box, outer,
+        #                   l_inner_box, l_free_throw, l_corner_a,
+        #                   l_corner_b, l_arc, r_hoop, r_backboard,
+        #                   r_outer_box, r_inner_box, r_free_throw,
+        #                   r_corner_a, r_corner_b, r_arc, half_court,
+        #                   hc_big_circle, hc_sm_circle]
+
+        outer = Rectangle((0, -50), width=94, height=50, facecolor=general_floor_color,
+                          edgecolor=line_color, zorder=zorder, lw=lw)
+
+        # The "paint" areas with fill and outline
+        l_outer_box = Rectangle((0, -33), 19, 16, lw=lw, facecolor=paint_color,
+                                edgecolor=line_color, zorder=zorder+1)
+        r_outer_box = Rectangle((75, -33), 19, 16, lw=lw, facecolor=paint_color,
+                                edgecolor=line_color, zorder=zorder+1)
+
+        # Inner center circle with fill
+        hc_sm_circle = Circle((47, -25), radius=2, lw=lw, facecolor=paint_color,
+                              edgecolor=line_color, zorder=zorder+1)
+
+        # All other lines are just outlines (fill=False) with the line_color
         l_hoop = Circle((5.35, -25), radius=.75, lw=lw, fill=False,
-                        color=color, zorder=zorder)
+                        color=line_color, zorder=zorder+1)
         r_hoop = Circle((88.65, -25), radius=.75, lw=lw, fill=False,
-                        color=color, zorder=zorder)
-        l_backboard = Rectangle((4, -28), 0, 6, lw=lw, color=color,
-                                zorder=zorder)
-        r_backboard = Rectangle((90, -28), 0, 6, lw=lw, color=color,
-                                zorder=zorder)
-        l_outer_box = Rectangle((0, -33), 19, 16, lw=lw, fill=False,
-                                color=color, zorder=zorder)
+                        color=line_color, zorder=zorder+1)
+        l_backboard = Rectangle((4, -28), 0, 6, lw=lw, color=line_color,
+                                zorder=zorder+1)
+        r_backboard = Rectangle((90, -28), 0, 6, lw=lw, color=line_color,
+                                zorder=zorder+1)
         l_inner_box = Rectangle((0, -31), 19, 12, lw=lw, fill=False,
-                                color=color, zorder=zorder)
-        r_outer_box = Rectangle((75, -33), 19, 16, lw=lw, fill=False,
-                                color=color, zorder=zorder)
+                                color=line_color, zorder=zorder+1)
         r_inner_box = Rectangle((75, -31), 19, 12, lw=lw, fill=False,
-                                color=color, zorder=zorder)
+                                color=line_color, zorder=zorder+1)
         l_free_throw = Circle((19, -25), radius=6, lw=lw, fill=False,
-                              color=color, zorder=zorder)
+                              color=line_color, zorder=zorder+1)
         r_free_throw = Circle((75, -25), radius=6, lw=lw, fill=False,
-                              color=color, zorder=zorder)
-        l_corner_a = Rectangle((0, -3), 14, 0, lw=lw, color=color,
-                               zorder=zorder)
-        l_corner_b = Rectangle((0, -47), 14, 0, lw=lw, color=color,
-                               zorder=zorder)
-        r_corner_a = Rectangle((80, -3), 14, 0, lw=lw, color=color,
-                               zorder=zorder)
-        r_corner_b = Rectangle((80, -47), 14, 0, lw=lw, color=color,
-                               zorder=zorder)
+                              color=line_color, zorder=zorder+1)
+        l_corner_a = Rectangle((0, -3), 14, 0, lw=lw, color=line_color,
+                               zorder=zorder+1)
+        l_corner_b = Rectangle((0, -47), 14, 0, lw=lw, color=line_color,
+                               zorder=zorder+1)
+        r_corner_a = Rectangle((80, -3), 14, 0, lw=lw, color=line_color,
+                               zorder=zorder+1)
+        r_corner_b = Rectangle((80, -47), 14, 0, lw=lw, color=line_color,
+                               zorder=zorder+1)
         l_arc = Arc((5, -25), 47.5, 47.5, theta1=292, theta2=68, lw=lw,
-                    color=color, zorder=zorder)
+                    color=line_color, zorder=zorder+1)
         r_arc = Arc((89, -25), 47.5, 47.5, theta1=112, theta2=248,
-                    lw=lw, color=color, zorder=zorder)
-        half_court = Rectangle((47, -50), 0, 50, lw=lw, color=color,
-                               zorder=zorder)
+                    lw=lw, color=line_color, zorder=zorder+1)
+        half_court = Rectangle((47, -50), 0, 50, lw=lw, color=line_color,
+                               zorder=zorder+1)
         hc_big_circle = Circle((47, -25), radius=6, lw=lw, fill=False,
-                               color=color, zorder=zorder)
-        hc_sm_circle = Circle((47, -25), radius=2, lw=lw, fill=False,
-                              color=color, zorder=zorder)
-        court_elements = [l_hoop, l_backboard, l_outer_box, outer,
-                          l_inner_box, l_free_throw, l_corner_a,
-                          l_corner_b, l_arc, r_hoop, r_backboard,
-                          r_outer_box, r_inner_box, r_free_throw,
-                          r_corner_a, r_corner_b, r_arc, half_court,
-                          hc_big_circle, hc_sm_circle]
+                               color=line_color, zorder=zorder+1)
+
+        court_elements = [outer, l_outer_box, r_outer_box, hc_sm_circle,
+                          l_hoop, l_backboard, l_inner_box, l_free_throw,
+                          l_corner_a, l_corner_b, l_arc, r_hoop, r_backboard,
+                          r_inner_box, r_free_throw, r_corner_a, r_corner_b,
+                          r_arc, half_court, hc_big_circle]
 
         # Add the court elements onto the axes
         for element in court_elements:
@@ -302,19 +404,112 @@ class Game(object):
         for frame in range(starting_frame, ending_frame):
             self.plot_frame(frame, highlight_player=highlight_player,
                             commentary=commentary, show_spacing=show_spacing)
-        command = ('ffmpeg -framerate 20 -start_number {starting_frame} '
-                   '-i %d.png -c:v libx264 -r 30 -pix_fmt yuv420p -vf '
-                   '"scale=trunc(iw/2)*2:trunc(ih/2)*2" {starting_frame}'
-                   '.mp4').format(starting_frame=starting_frame)
-        os.chdir('temp')
-        os.system(command)
-        os.chdir('..')
+        
+        ffmpeg_cmd = self._get_ffmpeg_path()
+        command = [
+            ffmpeg_cmd,
+            '-framerate', '20',
+            '-start_number', str(starting_frame),
+            '-i', '%d.png',
+            '-c:v', 'libx264',
+            '-r', '30',
+            '-pix_fmt', 'yuv420p',
+            '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+            f'{starting_frame}.mp4'
+        ]
+        
+        print(f"Running ffmpeg command: {' '.join(command)}")
+        try:
+            subprocess.run(command, cwd='temp', check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"Error generating video: {e}")
+        except FileNotFoundError:
+            print(f"Error: ffmpeg executable not found at {ffmpeg_cmd}")
 
         # Delete images
         for file in os.listdir('./temp'):
             if os.path.splitext(file)[1] == '.png':
                 os.remove('./temp/{file}'.format(file=file))
 
+        return self
+
+    def _get_ffmpeg_path(self):
+        """
+        Helper to find ffmpeg executable, specifically in Conda environments
+        where it might not be in the system PATH.
+        """
+        # First check if it's in PATH
+        if shutil.which("ffmpeg"):
+            return "ffmpeg"
+        
+        # Check standard Windows Conda location
+        # sys.prefix points to the env root (e.g. C:\Users\user\anaconda3\envs\myenv)
+        conda_ffmpeg = os.path.join(sys.prefix, 'Library', 'bin', 'ffmpeg.exe')
+        if os.path.exists(conda_ffmpeg):
+            print(f"Found ffmpeg in conda environment: {conda_ffmpeg}")
+            return conda_ffmpeg
+            
+        return "ffmpeg"
+
+    def animate_play(self, game_time, length, highlight_player=None,
+                     commentary=True, show_spacing=None):
+        """
+        Method for animating plays in game.
+        Outputs video file of play in {cwd}/temp.
+        Individual frames are streamed directly to ffmpeg without writing them
+        to the disk, which is a great speed improvement over watch_play
+
+        Args:
+            game_time (int): time in game to start video
+                (seconds into the game).
+                Currently game_time can also be an tuple of length two
+                with (starting_frame, ending_frame)if you want to
+                watch a play using frames instead of game time.
+            length (int): length of play to watch (seconds)
+            highlight_player (str): If not None, video will highlight
+                the circle of the inputed player for easy tracking.
+            commentary (bool): Whether to include play-by-play commentary in
+                the animation
+            show_spacing (str) in ['home', 'away']: show convex hull
+                spacing of home or away team.
+                If None, does not show spacing.
+
+        Returns: an instance of self, and outputs video file of play
+        """
+        if type(game_time) == tuple:
+            starting_frame = game_time[0]
+            ending_frame = game_time[1]
+        else:
+            # Get starting and ending frame from requested game_time and length
+            starting_frame = self.moments[self.moments.game_time.round() ==
+                                          game_time].index.values[0]
+            ending_frame = self.moments[self.moments.game_time.round() ==
+                                        game_time + length].index.values[0]
+
+        # Make video of each frame
+        filename = "temp/{game_time}.mp4".format(game_time=game_time)
+        if commentary:
+            size = (960, 960)
+        else:
+            size = (960, 480)
+        ffmpeg_cmd = self._get_ffmpeg_path()
+        
+        cmdstring = (ffmpeg_cmd,
+                     '-y', '-r', '20',  # fps
+                     '-s', '%dx%d' % size,  # size of image string
+                     '-pix_fmt', 'argb',  # Stream argb data from matplotlib
+                     '-f', 'rawvideo',  '-i', '-',
+                     '-vcodec', 'libx264', filename)
+
+        print(f"Saving video to {os.path.abspath(filename)}...")
+        # Stream plots to pipe
+        pipe = Popen(cmdstring, stdin=PIPE)
+        for frame in range(starting_frame, ending_frame):
+            self.plot_frame(frame, highlight_player=highlight_player,
+                            commentary=commentary, show_spacing=show_spacing,
+                            pipe=pipe)
+        pipe.stdin.close()
+        pipe.wait()
         return self
 
     def watch_player_actions(self, player_name, action, length=15, max_vids=5):
@@ -342,9 +537,14 @@ class Game(object):
         for index, time in enumerate(player_action_times):
             if index == max_vids:
                 break
-            self.watch_play(time-length, length,
-                            highlight_player=player_name,
-                            commentary=False)
+            # Use animate_play instead of watch_play for better efficiency
+            try:
+                print(f"Generating video {index+1}/{len(player_action_times) if max_vids is None else min(max_vids, len(player_action_times))}...")
+                self.animate_play(time-length, length,
+                                highlight_player=player_name,
+                                commentary=True)
+            except Exception as e:
+                print(f"Error generating video for action at time {time}: {e}")
         return self
 
     def _get_commentary(self, game_time, commentary_length=6,
@@ -368,36 +568,31 @@ class Game(object):
                 Most recent play-by-play calls, seperated by line breaks
             score (str): Score at current time 'XX - XX'
         """
-        commentary = [' 'for i in range(commentary_length)]
-        commentary[0] = '.'
-        count = 0
+        commentary = []
         score = "0 - 0"
         for game_second in range(game_time - commentary_depth, game_time + 2):
             for index, row in self.pbp[self.pbp.game_time ==
                                        game_second].iterrows():
-                if row['HOMEDESCRIPTION']:
-                    commentary[count] = ('{self.home_team}: '
-                                         .format(self=self) +
-                                         str(row['HOMEDESCRIPTION']))
-                    count += 1
-                if row['VISITORDESCRIPTION']:
-                    commentary[count] = ('{self.away_team}: '
-                                         .format(self=self) +
-                                         str(row['VISITORDESCRIPTION']))
-                    count += 1
-                if row['NEUTRALDESCRIPTION']:
-                    commentary[count] = str(row['NEUTRALDESCRIPTION'])
-                    count += 1
+                # Check if descriptions are strings (not NaN)
+                if isinstance(row['HOMEDESCRIPTION'], str):
+                    commentary.append('{self.home_team}: '.format(self=self) +
+                                      str(row['HOMEDESCRIPTION']))
+                if isinstance(row['VISITORDESCRIPTION'], str):
+                    commentary.append('{self.away_team}: '.format(self=self) +
+                                      str(row['VISITORDESCRIPTION']))
+                if isinstance(row['NEUTRALDESCRIPTION'], str):
+                    commentary.append(str(row['NEUTRALDESCRIPTION']))
                 score = str(row['SCORE'])
-                if count == commentary_length - 1:
-                    break
-        commentary_script = """{commentary[0]}
-                                \n{commentary[1]}
-                                \n{commentary[2]}
-                                \n{commentary[3]}
-                                \n{commentary[4]}
-                                \n{commentary[5]}
-                                """.format(commentary=commentary)
+        
+        # Pad with empty strings if fewer than commentary_length items
+        while len(commentary) < commentary_length:
+            commentary.append("")
+            
+        # Take only the last commentary_length items if we have too many
+        if len(commentary) > commentary_length:
+            commentary = commentary[-commentary_length:]
+            
+        commentary_script = "\n".join(commentary)
         return (commentary_script, score)
 
     def _get_player_actions(self, player_name, action):
@@ -429,7 +624,7 @@ class Game(object):
         Args:
             frame_number (int): Frame in game to retrieve data for
                 frame_number gets player tracking data from
-                    moments.ix[frame_number]
+                    moments.iloc[frame_number]
             highlight_player (str): Name of player to be highlighted
                 in downstream plotting.
                 if None, no player is highlighted.
@@ -449,10 +644,10 @@ class Game(object):
                 their edge thicker.
             universe_time (int): Time in the universe, in msec
         """
-        current_moment = self.moments.ix[frame_number]
+        current_moment = self.moments.iloc[frame_number]
         game_time = int(np.round(current_moment['game_time']))
         universe_time = int(current_moment['universe_time'])
-        x_pos, y_pos, colors, sizes, edges = [], [], [], [], []
+        x_pos, y_pos, colors, sizes, edges, jerseys = [], [], [], [], [], []
         # Get player positions
         for player in current_moment.positions:
             x_pos.append(player[2])
@@ -469,6 +664,11 @@ class Game(object):
                 edges.append(5)
             else:
                 edges.append(0.5)
+            # Add jersey number
+            if player[1] != -1:
+                jerseys.append(self.player_jerseys[player[1]])
+            else:
+                jerseys.append(None)
         # Unfortunately, the plot is below the y axis,
         # so the y positions need to be corrected
         y_pos = np.array(y_pos) - 50
@@ -480,11 +680,11 @@ class Game(object):
         game_clock = "%02d:%02d" % (game_min, game_sec)
         quarter = current_moment.quarter
         return (game_time, x_pos, y_pos, colors, sizes, quarter,
-                shot_clock, game_clock, edges, universe_time)
+                shot_clock, game_clock, edges, universe_time, jerseys)
 
     def plot_frame(self, frame_number, highlight_player=None,
                    commentary=True, show_spacing=False,
-                   plot_spacing=False, pipe=None):
+                   plot_spacing=None, pipe=None):
         """
         Creates an individual the frame of game.
         Outputs .png file in {cwd}/temp
@@ -492,7 +692,7 @@ class Game(object):
         Args:
             frame_number (int): number of frame in game to create
                 frame_number gets player tracking data from
-                moments.ix[frame_number]
+                moments.iloc[frame_number]
             highlight_player (str): Name of player to highlight
                 (by making their outline thicker).
                 if None, no player is highlighted
@@ -513,16 +713,23 @@ class Game(object):
         """
         (game_time, x_pos, y_pos, colors, sizes,
          quarter, shot_clock, game_clock, edges,
-         universe_time) = self._get_moment_details(frame_number,
+         universe_time, jerseys) = self._get_moment_details(frame_number,
                                                    highlight_player=highlight_player)
         (commentary_script, score) = self._get_commentary(game_time)
-        fig = plt.figure(figsize=(12, 6))
+        fig = plt.figure(figsize=(12, 6), dpi=80)
         self._draw_court()
         frame = plt.gca()
         frame.axes.get_xaxis().set_ticks([])
         frame.axes.get_yaxis().set_ticks([])
         plt.scatter(x_pos, y_pos, c=colors, s=sizes, alpha=0.85,
                     linewidths=edges)
+        
+        # Add jersey numbers
+        for i, (x, y) in enumerate(zip(x_pos, y_pos)):
+            if jerseys[i]:
+                plt.text(x, y, jerseys[i], ha='center', va='center',
+                         color='white', fontsize=10, fontweight='bold')
+
         plt.xlim(-5, 100)
         plt.ylim(-55, 5)
         sns.set_style('dark')
@@ -559,7 +766,7 @@ class Game(object):
             pipe.stdin.write(string)
             plt.close()
             if commentary:
-                fig = plt.figure(figsize=(12, 6))
+                fig = plt.figure(figsize=(12, 6), dpi=80)
                 plt.figtext(.2, .4, commentary_script, size=20)
                 fig.canvas.draw()
                 string = fig.canvas.tostring_argb()
@@ -719,7 +926,7 @@ class Game(object):
         end_time = int(self.pbp[self.pbp['EVENTNUM'] == event_num].game_time)
         # To find lower bound on starting frame of the play,
         # determining when previous play ended
-        putative_start_time = int(self.pbp.ix[play_index-1].game_time)
+        putative_start_time = int(self.pbp.iloc[play_index-1].game_time)
         putative_start_frame = self.get_frame(putative_start_time)
         end_frame = self.get_frame(end_time)
         for test_frame in range(putative_start_frame, end_frame):
@@ -730,63 +937,5 @@ class Game(object):
         else:
             return None
         # Add two seconds to game time to let the players settle into position
-        start_frame = self.get_frame(round(self.moments.ix[test_frame].game_time + 2))
+        start_frame = self.get_frame(round(self.moments.iloc[test_frame].game_time + 2))
         return (start_frame, end_frame)
-
-    def animate_play(self, game_time, length, highlight_player=None,
-                     commentary=True, show_spacing=None):
-        """
-        Method for animating plays in game.
-        Outputs video file of play in {cwd}/temp.
-        Individual frames are streamed directly to ffmpeg without writing them
-        to the disk, which is a great speed improvement over watch_play
-
-        Args:
-            game_time (int): time in game to start video
-                (seconds into the game).
-                Currently game_time can also be an tuple of length two
-                with (starting_frame, ending_frame)if you want to
-                watch a play using frames instead of game time.
-            length (int): length of play to watch (seconds)
-            highlight_player (str): If not None, video will highlight
-                the circle of the inputed player for easy tracking.
-            commentary (bool): Whether to include play-by-play commentary in
-                the animation
-            show_spacing (str) in ['home', 'away']: show convex hull
-                spacing of home or away team.
-                If None, does not show spacing.
-
-        Returns: an instance of self, and outputs video file of play
-        """
-        if type(game_time) == tuple:
-            starting_frame = game_time[0]
-            ending_frame = game_time[1]
-        else:
-            # Get starting and ending frame from requested game_time and length
-            starting_frame = self.moments[self.moments.game_time.round() ==
-                                          game_time].index.values[0]
-            ending_frame = self.moments[self.moments.game_time.round() ==
-                                        game_time + length].index.values[0]
-
-        # Make video of each frame
-        filename = "./temp/{game_time}.mp4".format(game_time=game_time)
-        if commentary:
-            size = (960, 960)
-        else:
-            size = (960, 480)
-        cmdstring = ('ffmpeg',
-                     '-y', '-r', '20',  # fps
-                     '-s', '%dx%d' % size,  # size of image string
-                     '-pix_fmt', 'argb',  # Stream argb data from matplotlib
-                     '-f', 'rawvideo',  '-i', '-',
-                     '-vcodec', 'libx264', filename)
-
-        # Stream plots to pipe
-        pipe = Popen(cmdstring, stdin=PIPE)
-        for frame in range(starting_frame, ending_frame):
-            self.plot_frame(frame, highlight_player=highlight_player,
-                            commentary=commentary, show_spacing=show_spacing,
-                            pipe=pipe)
-        pipe.stdin.close()
-        pipe.wait()
-        return self

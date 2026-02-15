@@ -93,7 +93,7 @@ def get_spacing_statistics(date, home_team, away_team, write_file=False,
         pickle.dump(results, open('data/spacing/' + filename + '.p', "wb"))
     # Write game scores to disk
     if write_score:
-        score = game.pbp['SCORE'].ix[len(game.pbp) - 1]
+        score = game.pbp['SCORE'].iloc[len(game.pbp) - 1]
         pickle.dump(score, open('data/score/' + filename + '.p', "wb"))
 
     return(home_offense_areas, home_defense_areas,
@@ -130,23 +130,30 @@ def plot_spacing(date, home_team, away_team, defense=True, save_plot=False):
         Also, shows plt.hist of team spacing during game
 
     """
-    plt.plot()
+    #plt.plot()
     filename = ("{date}-{away_team}-"
                 "{home_team}").format(date=date, away_team=away_team,
-                                      home_team=home_team)
+                                      home_team=home_team) + ".p"
     if filename in os.listdir('data/spacing'):
         data = pickle.load(open("data/spacing/"+filename, "rb"))
     else:
         return None
     plt.figure()
     if defense:
+        print("defense")
         plt.hist(data[1], bins=100, alpha=0.4, label=home_team)
         plt.hist(data[3], bins=100, alpha=0.4, label=away_team)
+        # sns.kdeplot(data[1], fill=True, label=home_team)
+        # sns.kdeplot(data[3], fill=True, label=away_team)
     else:
         plt.hist(data[0], bins=100, alpha=0.4, label=home_team)
-        plt.hist(data[1], bins=100, alpha=0.4, label=away_team)
-    plt.xlim(20, 100)
+        plt.hist(data[2], bins=100, alpha=0.4, label=away_team)
+        # sns.kdeplot(data[0], fill=True, label=home_team)
+        # sns.kdeplot(data[2], fill=True, label=away_team)
+    #plt.xlim(20, 100)
     plt.legend(loc='upper right')
+    plt.xlabel('Spacing Area (sq ft)')
+    plt.ylabel('Frequency') 
     plt.show()
     if save_plot:
         plt.savefig('temp/spacing{date}.png'.format(date=date))
@@ -177,8 +184,7 @@ def get_spacing_details(game):
         If game not saved in data/spacing directory, returns None
 
     """
-
-    fname = "{game[0]}-{game[2]}-{game[1]}.p".format(game=game)
+    fname = f"{game.date}-{game.away_team}-{game.home_team}.p"
     if (fname in os.listdir('data/spacing') and
             fname in os.listdir('data/score')):
         data = pickle.load(open("data/spacing/"+fname, "rb"))
@@ -212,7 +218,7 @@ def get_spacing_df(gamelist):
     for game in gamelist:
         detail = get_spacing_details(game)
         if detail:
-            details.append((*detail, game[1], game[2]))
+            details.append((*detail, game.home_team, game.away_team))
     df = pd.DataFrame(details)
     df.columns = ['home_points', 'away_points', 'home_offense_areas',
                   'home_defense_areas', 'away_offense_areas',
@@ -236,19 +242,25 @@ def plot_offense_vs_defense_spacing(spacing_data):
     Returns None
         Also, shows plot.
     """
-    sns.regplot(spacing_data.away_offense_areas,
-                spacing_data.home_defense_areas,
-                fit_reg=True, color=sns.color_palette()[0],
+    sns.regplot(x=spacing_data['away_offense_areas'],
+                y=spacing_data['home_defense_areas'],
+                fit_reg=True, 
+                color=sns.color_palette()[0],
                 ci=None)
-    sns.regplot(spacing_data.home_offense_areas,
-                spacing_data.away_defense_areas,
-                fit_reg=False, color=sns.color_palette()[0],
+    
+    sns.regplot(x=spacing_data['home_offense_areas'],
+                y=spacing_data['away_defense_areas'],
+                fit_reg=False, 
+                color=sns.color_palette()[0],
                 ci=None)
+
     plt.xlabel('Average Offensive Spacing (sq ft)', fontsize=16)
     plt.ylabel('Average Defensive Spacing (sq ft)', fontsize=16)
     plt.title('Offensive spacing robustly induces defensive spacing',
               fontsize=16)
     plt.savefig('temp/OffenseVsDefense.png')
+
+    plt.show()
     plt.close()
     return None
 
@@ -268,17 +280,18 @@ def plot_defense_spacing_vs_score(spacing_data):
     """
     y = spacing_data.home_points - spacing_data.away_points
     x = spacing_data.away_defense_areas - spacing_data.home_defense_areas
-    sns.regplot(x, y, ci=False)
+    sns.regplot(x=x, y=y, ci=False)
     plt.xlabel(' Home Team Defensive Spacing Differential (sq ft)',
                fontsize=16)
     plt.ylabel('Home Team Score Differential (pts)', fontsize=16)
     plt.title('Spacing the defense correlates with outscoring opponents',
               fontsize=16)
     plt.savefig('temp/SpacingVsScore.png')
+    plt.show()
     plt.close()
 
 
-def plot_defense_spacing_vs_wins(spacing_datae):
+def plot_defense_spacing_vs_wins(spacing_data):
     """
     Plot of team's defensive spacing vs wins (binary: 0, 1) for games
 
@@ -329,18 +342,31 @@ def plot_team_defensive_spacing(spacing_data):
     Returns None
         Also, shows plot.
     """
-    df = pd.DataFrame()
-    df['home'] = spacing_data.groupby('home_team')['away_defense_areas'].sum()
-    df['home_count'] = spacing_data.groupby('home_team')['away_defense_areas'].count()
-    df['away'] = spacing_data.groupby('away_team')['home_defense_areas'].sum()
-    df['away_count'] = spacing_data.groupby('away_team')['home_defense_areas'].count()
-    df['average_induced_space'] = (df.home + df.away) / (df.away_count + df.home_count)
+    home_stats = spacing_data.groupby('home_team')['away_defense_areas'].agg(
+        home_sum='sum', 
+        home_count='count'
+    )
+    
+    away_stats = spacing_data.groupby('away_team')['home_defense_areas'].agg(
+        away_sum='sum', 
+        away_count='count'
+    )
+
+    df = pd.concat([home_stats, away_stats], axis=1).fillna(0)
+    
+    # 4. Calculate the true average
+    df['average_induced_space'] = (df['home_sum'] + df['away_sum']) / (df['home_count'] + df['away_count'])
+    
+    # 5. Plotting
+    # Using figsize makes sure the bar chart isn't cramped if you have a lot of teams
+    plt.figure(figsize=(12, 6))
     df['average_induced_space'].sort_values().plot(kind='bar', color=sns.color_palette()[0])
     plt.xlabel('', fontsize=16)
     plt.ylabel("Opponent's Defensive Spacing (sq ft)", fontsize=16)
     plt.ylim(60, 70)
     plt.title("Team's ability to space the defense", fontsize=18)
     plt.savefig('temp/DefensiveSpacing.png')
+    plt.show()
     plt.close()
 
 
@@ -355,38 +381,68 @@ def plot_teams_ability_to_space_defense(spacing_data):
              'away_offense_areas', 'away_defense_areas']
         save_fig (bool): if True, save plot to temp/ directory
 
-    Returns None
-        Also saves plot to temp dir
-    """
-    df = spacing_data.groupby('home_team').count()
-    df['home'] = spacing_data.groupby('home_team')['away_defense_areas'].sum()
-    df['home_count'] = spacing_data.groupby('home_team')['away_defense_areas'].count()
-    df['away'] = spacing_data.groupby('away_team')['home_defense_areas'].sum()
-    df['away_count'] = spacing_data.groupby('away_team')['home_defense_areas'].count()
-    df['average_induced_space'] = (df.home + df.away) / (df.away_count + df.home_count)
+    Returns None"""
 
-    df['home_offense'] = spacing_data.groupby('home_team')['home_offense_areas'].sum()
-    df['home_offense_count'] = spacing_data.groupby('home_team')['home_offense_areas'].count()
-    df['away_offense'] = spacing_data.groupby('away_team')['away_offense_areas'].sum()
-    df['away_offense_count'] = spacing_data.groupby('away_team')['away_offense_areas'].count()
-    df['average_offense_space'] = (df.home_offense +
-                                   df.away_offense) / (df.away_offense_count +
-                                                       df.home_offense_count)
-    plt.scatter(df['average_induced_space'],
-                df['average_offense_space'],
+    # 1. Calculate Defensive Spacing (Induced)
+    home_def = spacing_data.groupby('home_team')['away_defense_areas'].agg(
+        home_sum='sum', home_count='count')
+    away_def = spacing_data.groupby('away_team')['home_defense_areas'].agg(
+        away_sum='sum', away_count='count')
+    
+    df_def = pd.concat([home_def, away_def], axis=1).fillna(0)
+    avg_induced_space = (df_def['home_sum'] + df_def['away_sum']) / (df_def['home_count'] + df_def['away_count'])
+
+    # 2. Calculate Offensive Spacing
+    home_off = spacing_data.groupby('home_team')['home_offense_areas'].agg(
+        h_off_sum='sum', h_off_count='count')
+    away_off = spacing_data.groupby('away_team')['away_offense_areas'].agg(
+        a_off_sum='sum', a_off_count='count')
+    
+    df_off = pd.concat([home_off, away_off], axis=1).fillna(0)
+    avg_offense_space = (df_off['h_off_sum'] + df_off['a_off_sum']) / (df_off['h_off_count'] + df_off['a_off_count'])
+
+    df = pd.DataFrame({
+        'average_induced_space': avg_induced_space,
+        'average_offense_space': avg_offense_space
+    })
+
+    plt.figure(figsize=(10, 8))
+    plt.scatter(x=df['average_offense_space'],
+                y=df['average_induced_space'],
                 s=74, alpha=0.7,
-                c=sns.color_palette()[0])
-    for row in df.iterrows():
-        if row[0] in ['DEN', 'SAS', 'LAC', 'CLE', 'DET', 'WAS', 'TOR',
-                      'MIL', 'ORL', 'DAL']:
-            plt.annotate(row[0],
-                         xy=[row[1]['average_induced_space'] + -0.15,
-                             row[1]['average_offense_space'] + 0.1])
+                c=[sns.color_palette()[0]])
+    
+    # Annotate specific teams
+    teams_to_label = ['DEN', 'SAS', 'LAC', 'CLE', 'DET', 'WAS', 'TOR', 'MIL', 'ORL', 'DAL',"GSW"]
+    
+    for team, row in df.iterrows():
+        print(row['average_offense_space'])
+        print(row['average_induced_space'])
+        #if team in teams_to_label:
+        plt.annotate(
+            text=str(team), 
+            xy=(row['average_offense_space'], row['average_induced_space']), 
+            xytext=(0, 8),                  
+            textcoords='offset points',     
+            fontsize=10, 
+            ha='center',                    
+            fontweight='bold'
+        )
     plt.xlabel('Average Offensive Spacing (sq ft)', fontsize=16)
     plt.ylabel("Average Opponent's Defensive Spacing (sq ft)", fontsize=16)
     plt.title("Team's ability to space opponent's defense", fontsize=16)
-    plt.savefig('temp/Spacing_scatter.png')
+    
+
+    plt.savefig('temp/Spacing_scatter.png', bbox_inches='tight')
+        
+    plt.show()
     plt.close()
+
+    return None
+
+
+
+
 
 
 if __name__ == "__main__":
