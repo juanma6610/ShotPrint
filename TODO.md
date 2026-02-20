@@ -1,0 +1,4 @@
+- Merge Linouk repo https://github.com/linouk23/NBA-Player-Movements/tree/master with what I already have to improve visuals (Low priority)
+- Analyze Voronoi diagram vs Convex Hull for spacing analytics (Medium priority)
+- Do the velocity/acceleration analysis paired with the fatigue component (Medium priority)
+- 

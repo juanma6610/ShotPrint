@@ -14,27 +14,6 @@ from game import Game
 # os.chdir('~/Desktop/Personal/SportVU/NBA-player-movement')
 
 
-def extract_games():
-    """
-    Extract games from allgames.txt
-
-    Returns:
-        list: list of games.  Each element is list is tuple
-            (date, home_team, away_team)
-        example element: ('01.01.2016', 'TOR', 'CHI')
-    """
-
-    games = []
-    with open('allgames.txt', 'r') as game_file:
-        for line in game_file:
-            game = line.split('.')
-            date = "{game[0]}.{game[1]}.{game[2]}".format(game=game)
-            away = game[3]
-            home = game[5]
-            games.append((date, home, away))
-    return games
-
-
 def calculate_velocities(game, frame, highlight_player=None):
     """
     Calculates team or player velocity for a frame in a game

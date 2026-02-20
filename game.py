@@ -20,7 +20,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Circle, Rectangle, Arc, Polygon
 import numpy as np
 import seaborn as sns
-from scipy.spatial import ConvexHull
+from scipy.spatial import ConvexHull, Voronoi, voronoi_plot_2d
 
 # Initialize project
 if not os.path.exists('temp'):
@@ -362,7 +362,8 @@ class Game(object):
         return ax
 
     def watch_play(self, game_time, length, highlight_player=None,
-                   commentary=True, show_spacing=None):
+                   commentary=True, show_spacing=None, show_spacing_team=None,
+                   show_velocity=False, show_control=None, use_time_control=False):
         """
         DEPRECIATED.  See animate_play() for similar (fastere) method
 
@@ -403,7 +404,10 @@ class Game(object):
         # Make video of each frame
         for frame in range(starting_frame, ending_frame):
             self.plot_frame(frame, highlight_player=highlight_player,
-                            commentary=commentary, show_spacing=show_spacing)
+                            commentary=commentary, show_spacing=show_spacing,
+                            show_spacing_team=show_spacing_team,
+                            show_velocity=show_velocity, show_control=show_control,
+                            use_time_control=use_time_control)
         
         ffmpeg_cmd = self._get_ffmpeg_path()
         command = [
@@ -452,7 +456,8 @@ class Game(object):
         return "ffmpeg"
 
     def animate_play(self, game_time, length, highlight_player=None,
-                     commentary=True, show_spacing=None):
+                     commentary=True, show_spacing=None, show_spacing_team=None,
+                     show_velocity=False, show_control=None, use_time_control=False):
         """
         Method for animating plays in game.
         Outputs video file of play in {cwd}/temp.
@@ -507,7 +512,9 @@ class Game(object):
         for frame in range(starting_frame, ending_frame):
             self.plot_frame(frame, highlight_player=highlight_player,
                             commentary=commentary, show_spacing=show_spacing,
-                            pipe=pipe)
+                            show_spacing_team=show_spacing_team,
+                            show_velocity=show_velocity, show_control=show_control,
+                            use_time_control=use_time_control, pipe=pipe)
         pipe.stdin.close()
         pipe.wait()
         return self
@@ -683,7 +690,8 @@ class Game(object):
                 shot_clock, game_clock, edges, universe_time, jerseys)
 
     def plot_frame(self, frame_number, highlight_player=None,
-                   commentary=True, show_spacing=False,
+                   commentary=True, show_spacing=False, show_spacing_team=None,
+                   show_velocity=False, show_control=None, use_time_control=False,
                    plot_spacing=None, pipe=None):
         """
         Creates an individual the frame of game.
@@ -698,9 +706,16 @@ class Game(object):
                 if None, no player is highlighted
             commentary (bool): if True, add play-by-play commentary
                 under frame
-            show_spacing (str in ['home', 'away']): show convex hull
+            show_spacing (str in ['vor', 'ch']): show convex hull or voronoi diagram
                 of home or away team
-                if None, does not display any convex hull
+                if None, does not display any
+            show_spacing_team (str in  ['home','away']): show spacing for home or away team
+                if None, does not display any
+            show_velocity (bool): if True, show player velocity vectors
+            show_control (str in ['home', 'away'] or bool): if specified, show space control heatmap
+                for the given team. If True, defaults to offensive team.
+            use_time_control (bool): if True and show_control is enabled, use physics-based
+                time-to-reach instead of distance for space control calculation
             pipe (subprocesses.Popen): Popen object with open pipe
                 to send image to if False, image is written to disk
                 instead of sent to pipe
@@ -747,18 +762,121 @@ class Game(object):
         plt.scatter([30, 67], [2.5, 2.5], s=100,
                     c=[self.team_colors[self.away_id],
                        self.team_colors[self.home_id]])
-        if show_spacing:
+        if show_spacing == "ch":
             # Show convex hull on frame
             xy_pos = np.column_stack((np.array(x_pos), np.array(y_pos)))
-            if show_spacing == 'home':
+            if show_spacing_team == 'home':
                 points = xy_pos[1:6, :]
-            if show_spacing == 'away':
+            if show_spacing_team == 'away':
                 points = xy_pos[6:, :]
             hull = ConvexHull(points)
             hull_points = points[hull.vertices, :]
             polygon = Polygon(hull_points, alpha=0.3, color='gray')
             ax = plt.gca()
             ax.add_patch(polygon)
+        
+        if show_spacing == 'vor':
+            # Show Voronoi diagram on frame
+            details = self._get_moment_details(frame_number)
+            x_pos = np.array(details[1])
+            y_pos = np.array(details[2])
+            
+            if len(x_pos) == 11:
+                player_x = x_pos[1:]
+                player_y = y_pos[1:]
+                players = np.column_stack((player_x, player_y))
+                
+                # Use mirroring to bound the cells
+                mirrors = []
+                for p in players:
+                    mirrors.append([-p[0], p[1]])
+                    mirrors.append([2*94 - p[0], p[1]])
+                    mirrors.append([p[0], -p[1]])
+                    mirrors.append([p[0], -100 - p[1]])
+                
+                points = np.concatenate([players, mirrors])
+                vor = Voronoi(points)
+                ax = plt.gca()
+                
+                for i in range(10):
+                    region_idx = vor.point_region[i]
+                    region_vertices_indices = vor.regions[region_idx]
+                    
+                    if -1 not in region_vertices_indices and len(region_vertices_indices) > 0:
+                        region_vertices = vor.vertices[region_vertices_indices]
+                        color = 'red' if i < 5 else 'blue'
+                        polygon = Polygon(region_vertices, alpha=0.2, facecolor=color, edgecolor='black', lw=1)
+                        ax.add_patch(polygon)
+        
+        if show_velocity and frame_number > 0:
+            # Calculate and plot player velocities using refined physics
+            physics = self.get_player_physics(frame_number)
+            
+            if physics:
+                curr = self._get_moment_details(frame_number)
+                x = np.array(curr[1][1:])
+                y = np.array(curr[2][1:])
+                
+                # Extract vectors and speeds
+                dx = np.array([physics[i]['velocity'][0] for i in range(1, 11)])
+                dy = np.array([physics[i]['velocity'][1] for i in range(1, 11)])
+                speeds = np.array([physics[i]['speed'] for i in range(1, 11)])
+
+                circle_offset = 1.8  # Pushes arrow start to the edge of the circle
+                min_visual_speed = 2.0 # Ensures slow players have a visible arrow
+                
+                # Create copies for plotting so we don't overwrite raw data
+                plot_dx = dx.copy()
+                plot_dy = dy.copy()
+                
+                moving_mask = speeds > 0.1
+                
+                # Normalize arrows for slow players so they aren't 'stumps'
+                # but keep the direction intact
+                for i in range(len(speeds)):
+                    if 0.1 < speeds[i] < min_visual_speed:
+                        plot_dx[i] = (dx[i] / speeds[i]) * min_visual_speed
+                        plot_dy[i] = (dy[i] / speeds[i]) * min_visual_speed
+
+                x_start = x.copy()
+                y_start = y.copy()
+                
+                # Shift the start point to the perimeter of the s=200 circle
+                x_start[moving_mask] += (dx[moving_mask] / speeds[moving_mask]) * circle_offset
+                y_start[moving_mask] += (dy[moving_mask] / speeds[moving_mask]) * circle_offset
+
+                # Render arrows
+                plt.quiver(x_start, y_start, plot_dx, plot_dy, 
+                           angles='xy', scale_units='xy', scale=5, 
+                           color='black', width=0.005, headwidth=3, 
+                           headlength=5, zorder=5, pivot='tail')
+                
+                # Render text labels slightly further out
+                for i, (px, py, speed) in enumerate(zip(x, y, speeds)):
+                    # Use the original dx/dy to decide where to put the text
+                    # so it doesn't overlap the arrow itself
+                    text_x = px + (dx[i]/speeds[i] * 3) if speeds[i] > 0.1 else px + 1
+                    text_y = py + (dy[i]/speeds[i] * 3) if speeds[i] > 0.1 else py + 1
+                    
+                    plt.text(text_x, text_y, f"{speed:.1f} ft/s", 
+                             fontsize=8, color='black', alpha=0.8, 
+                             fontweight='bold', ha='center')
+                
+        if show_control:
+            # Determine which team's perspective to show
+            control_team = show_control if isinstance(show_control, str) else 'home'
+            
+            X, Y, Z = self.get_space_control(frame_number, team=control_team, 
+                                             resolution=50, use_time=use_time_control)
+            
+            if X is not None:
+                # Plot heatmap with diverging colormap
+                # Positive values (red) = control_team controls space
+                # Negative values (blue) = opponent controls space
+                ax = plt.gca()
+                im = ax.imshow(Z, extent=[0, 94, -50, 0], origin='lower',
+                              cmap='RdBu_r', alpha=0.5, vmin=-12, vmax=12, zorder=1)
+                
         if pipe:
             # Write ARGB values to pipe
             fig.canvas.draw()
@@ -823,6 +941,238 @@ class Game(object):
         away_area = ConvexHull(xy_pos[6:, :]).area
         return (home_area, away_area)
 
+    def get_voronoi_areas(self, frame_number):
+        """
+        Calculates Voronoi cells for each player and returns the total area
+        occupied by the home and away teams, clipped to the court boundaries.
+
+        Args:
+            frame_number (int): number of frame in game to calculate
+                team Voronoi areas
+
+        Returns: tuple of data (home_voronoi_area, away_voronoi_area)
+            home_voronoi_area (float): total area occupied by home team
+            away_voronoi_area (float): total area occupied by away team
+        """
+        details = self._get_moment_details(frame_number)
+        x_pos = np.array(details[1])
+        y_pos = np.array(details[2])
+        
+        # We only care about the 10 players, not the ball (index 0 is ball)
+        if len(x_pos) < 11:
+            return (0.0, 0.0)
+            
+        player_x = x_pos[1:]
+        player_y = y_pos[1:]
+        players = np.column_stack((player_x, player_y))
+        
+        # Define court boundaries
+        # x: [0, 94], y: [-50, 0]
+        
+        # Mirroring technique to clip Voronoi cells to the rectangle
+        mirrors = []
+        for p in players:
+            mirrors.append([-p[0], p[1]]) # Mirror across x=0
+            mirrors.append([2*94 - p[0], p[1]]) # Mirror across x=94
+            mirrors.append([p[0], -p[1]]) # Mirror across y=0
+            mirrors.append([p[0], -100 - p[1]]) # Mirror across y=-50
+            
+        points = np.concatenate([players, mirrors])
+        vor = Voronoi(points)
+        
+        home_area = 0.0
+        away_area = 0.0
+        
+        for i in range(10):
+            region_idx = vor.point_region[i]
+            region_vertices_indices = vor.regions[region_idx]
+            
+            if -1 not in region_vertices_indices and len(region_vertices_indices) > 0:
+                region_vertices = vor.vertices[region_vertices_indices]
+                cell_area = ConvexHull(region_vertices).volume 
+                
+                if i < 5: # Home team
+                    home_area += cell_area
+                else: # Away team
+                    away_area += cell_area
+                    
+        return (home_area, away_area)
+
+    def _time_to_reach(self, player_pos, player_vel, target_pos, max_accel=10.0, max_speed=22.0):
+        """
+        Calculates minimum time for a player to reach a target position.
+        Uses kinematic equations accounting for current velocity, acceleration, and max speed.
+        
+        Args:
+            player_pos (np.array): Current position [x, y]
+            player_vel (np.array): Current velocity [vx, vy] in ft/s
+            target_pos (np.array): Target position [x, y]
+            max_accel (float): Maximum acceleration in ft/s²
+            max_speed (float): Maximum speed in ft/s
+            
+        Returns:
+            float: Minimum time to reach target in seconds
+        """
+        # Vector from player to target
+        displacement = target_pos - player_pos
+        distance = np.linalg.norm(displacement)
+        
+        if distance < 0.1:  # Already at target
+            return 0.0
+            
+        # Unit vector toward target
+        direction = displacement / distance
+        
+        # Current speed and velocity component toward target
+        current_speed = np.linalg.norm(player_vel)
+        v_parallel = np.dot(player_vel, direction)  # Velocity toward target
+        
+        # Simplified model: assume player can instantly redirect velocity toward target
+        # More realistic would include turning radius, but this is computationally simpler
+        
+        # If already at or above max speed
+        if current_speed >= max_speed:
+            return distance / max_speed
+        
+        # Distance to accelerate to max speed from current speed in target direction
+        # v² = v₀² + 2ad  =>  d = (v² - v₀²) / (2a)
+        v_initial = max(0, v_parallel)  # Only count positive component
+        
+        if v_initial >= max_speed:
+            # Already at max speed toward target
+            return distance / max_speed
+        
+        # Distance needed to reach max speed
+        accel_distance = (max_speed**2 - v_initial**2) / (2 * max_accel)
+        
+        if accel_distance >= distance:
+            # Won't reach max speed, just accelerate the whole way
+            # d = v₀t + ½at²  =>  solve quadratic
+            # ½at² + v₀t - d = 0
+            a, b, c = 0.5 * max_accel, v_initial, -distance
+            discriminant = b**2 - 4*a*c
+            if discriminant < 0:
+                # Fallback to simple distance/speed
+                return distance / max(current_speed, 1.0)
+            t = (-b + np.sqrt(discriminant)) / (2*a)
+            return t
+        else:
+            # Accelerate to max speed, then cruise
+            # Time to accelerate: v = v₀ + at  =>  t = (v - v₀)/a
+            t_accel = (max_speed - v_initial) / max_accel
+            
+            # Remaining distance at max speed
+            remaining_distance = distance - accel_distance
+            t_cruise = remaining_distance / max_speed
+            
+            return t_accel + t_cruise
+
+    def get_space_control(self, frame_number, team='home', resolution=50, use_time=False):
+        """
+        Calculates space control heatmap using delta-distance or delta-time metric.
+        For each point on the court, computes:
+        - If use_time=False: delta_d(x,y) = d_closest_opponent - d_closest_teammate
+        - If use_time=True: delta_t(x,y) = t_closest_opponent - t_closest_teammate
+        
+        Args:
+            frame_number (int): Frame number to analyze
+            team (str): 'home' or 'away' - perspective for control calculation
+            resolution (int): Grid resolution (higher = more detail, slower)
+            use_time (bool): If True, use physics-based time-to-reach instead of distance
+            
+        Returns:
+            tuple: (X, Y, Z) where X and Y are meshgrid coordinates and
+                   Z is the control values (positive = team controls, negative = opponent controls)
+        """
+        details = self._get_moment_details(frame_number)
+        x_pos = np.array(details[1])
+        y_pos = np.array(details[2])
+        
+        if len(x_pos) < 11:
+            return None, None, None
+            
+        # Separate teams (skip ball at index 0)
+        home_x = x_pos[1:6]
+        home_y = y_pos[1:6]
+        away_x = x_pos[6:11]
+        away_y = y_pos[6:11]
+        
+        # Get velocities if using time-based metric
+        if use_time:
+            physics = self.get_player_physics(frame_number)
+            if not physics:
+                # Fallback to distance-based if physics unavailable
+                use_time = False
+            else:
+                home_vels = [physics[i]['velocity'] for i in range(1, 6)]
+                away_vels = [physics[i]['velocity'] for i in range(6, 11)]
+        
+        # Create grid across court
+        x_grid = np.linspace(0, 94, resolution)
+        y_grid = np.linspace(-50, 0, resolution)
+        X, Y = np.meshgrid(x_grid, y_grid)
+        
+        # Initialize control array
+        Z = np.zeros_like(X)
+        
+        # Determine which team we're calculating for
+        if team == 'home':
+            team_x, team_y = home_x, home_y
+            opp_x, opp_y = away_x, away_y
+            if use_time:
+                team_vels = home_vels
+                opp_vels = away_vels
+        else:
+            team_x, team_y = away_x, away_y
+            opp_x, opp_y = home_x, home_y
+            if use_time:
+                team_vels = away_vels
+                opp_vels = home_vels
+        
+        # Calculate delta_d or delta_t for each grid point
+        for i in range(resolution):
+            for j in range(resolution):
+                target = np.array([X[i, j], Y[i, j]])
+                
+                if use_time:
+                    # Time-based: calculate time to reach for each player
+                    team_times = []
+                    for k in range(5):
+                        pos = np.array([team_x[k], team_y[k]])
+                        vel = team_vels[k]
+                        t = self._time_to_reach(pos, vel, target)
+                        team_times.append(t)
+                    
+                    opp_times = []
+                    for k in range(5):
+                        pos = np.array([opp_x[k], opp_y[k]])
+                        vel = opp_vels[k]
+                        t = self._time_to_reach(pos, vel, target)
+                        opp_times.append(t)
+                    
+                    t_teammate = np.min(team_times)
+                    t_opponent = np.min(opp_times)
+                    
+                    # Delta time (positive = team controls, negative = opponent controls)
+                    Z[i, j] = t_opponent - t_teammate
+                else:
+                    # Distance-based (original implementation)
+                    team_dists = np.sqrt((team_x - target[0])**2 + (team_y - target[1])**2)
+                    d_teammate = np.min(team_dists)
+                    
+                    opp_dists = np.sqrt((opp_x - target[0])**2 + (opp_y - target[1])**2)
+                    d_opponent = np.min(opp_dists)
+                    
+                    # Delta distance (positive = team controls, negative = opponent controls)
+                    Z[i, j] = d_opponent - d_teammate
+                
+        return X, Y, Z
+
+    def get_distance(self, frame_number, highlight_player):
+        """
+        Placeholder for distance calculation logic.
+        """
+        pass
     def get_offensive_team(self, frame_number):
         """
         Determines which team is on offense.
@@ -879,6 +1229,60 @@ class Game(object):
         if incorrect_count > correct_count:
             self.flip_direction = True
         return None
+
+    def get_player_physics(self, frame_number):
+        """
+        Calculates kinematic properties (velocity and acceleration) for all players.
+        Units are in ft/s and ft/s^2.
+        
+        Args:
+            frame_number (int): number of frame in game to calculate physics for
+            
+        Returns: dict with player indices as keys and (velocity, acceleration) as values.
+                 Velocity and acceleration are numpy arrays [vx, vy] and [ax, ay].
+        """
+        if frame_number < 1 or frame_number >= len(self.moments) - 1:
+            return {}
+
+        # We need three frames to get acceleration comfortably (central difference or forward/backward)
+        # Let's use current and previous for velocity, and previous/current/next for acceleration
+        curr = self._get_moment_details(frame_number)
+        prev = self._get_moment_details(frame_number - 1)
+        next_m = self._get_moment_details(frame_number + 1)
+        
+        # Universe time is in milliseconds
+        dt1 = (curr[9] - prev[9]) / 1000.0 # Time between prev and curr in seconds
+        dt2 = (next_m[9] - curr[9]) / 1000.0 # Time between curr and next in seconds
+        
+        if dt1 == 0 or dt2 == 0:
+            return {}
+            
+        physics = {}
+        for i in range(1, 11): # Skip ball
+            # Positions
+            p_prev = np.array([prev[1][i], prev[2][i]])
+            p_curr = np.array([curr[1][i], curr[2][i]])
+            p_next = np.array([next_m[1][i], next_m[2][i]])
+            
+            # Velocities (ft/s)
+            v1 = (p_curr - p_prev) / dt1
+            v2 = (p_next - p_curr) / dt2
+            
+            # Instantaneous velocity at current frame (average of v1 and v2 is common)
+            v_curr = (v1 + v2) / 2.0
+            
+            # Acceleration (ft/s^2)
+            # a = (v2 - v1) / ((dt1 + dt2) / 2)
+            a_curr = (v2 - v1) / ((dt1 + dt2) / 2.0)
+            
+            physics[i] = {
+                'velocity': v_curr,
+                'acceleration': a_curr,
+                'speed': np.linalg.norm(v_curr),
+                'accel_mag': np.linalg.norm(a_curr)
+            }
+            
+        return physics
 
     def get_frame(self, game_time):
         """

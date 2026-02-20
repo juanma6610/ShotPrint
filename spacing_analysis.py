@@ -58,6 +58,8 @@ def get_spacing_statistics(date, home_team, away_team, write_file=False,
                element of the tuple is a list of convex hull areas
                for each frame in the game.
     """
+
+    ##MY PROBLEM WITH THIS METHOD IS THAT I CARE MORE ABOUT WHEN THE OFFENSE IS SET AND WHEN IT 
     filename = ("{date}-{away_team}-"
                 "{home_team}.p").format(date=date,
                                         away_team=away_team,
@@ -71,19 +73,28 @@ def get_spacing_statistics(date, home_team, away_team, write_file=False,
         pickle.dump(game, open('data/game/' + filename, "wb"))
     home_offense_areas, home_defense_areas = [], []
     away_offense_areas, away_defense_areas = [], []
+    home_offense_vor, home_defense_vor = [], []
+    away_offense_vor, away_defense_vor = [], []
     print(date, home_team, away_team)
     for frame in range(len(game.moments)):
         offensive_team = game.get_offensive_team(frame)
         if offensive_team:
             home_area, away_area = game.get_spacing_area(frame)
+            home_vor, away_vor = game.get_voronoi_areas(frame)
             if offensive_team == 'home':
                 home_offense_areas.append(home_area)
                 away_defense_areas.append(away_area)
+                home_offense_vor.append(home_vor)
+                away_defense_vor.append(away_vor)
             if offensive_team == 'away':
                 home_defense_areas.append(home_area)
                 away_offense_areas.append(away_area)
+                home_defense_vor.append(home_vor)
+                away_offense_vor.append(away_vor)
     results = (home_offense_areas, home_defense_areas,
-               away_offense_areas, away_defense_areas)
+               away_offense_areas, away_defense_areas,
+               home_offense_vor, home_defense_vor,
+               away_offense_vor, away_defense_vor)
     # Write spacing data to disk
     if write_file:
         filename = ("{date}-{away_team}-"
@@ -222,7 +233,9 @@ def get_spacing_df(gamelist):
     df = pd.DataFrame(details)
     df.columns = ['home_points', 'away_points', 'home_offense_areas',
                   'home_defense_areas', 'away_offense_areas',
-                  'away_defense_areas', 'away_team', 'home_team']
+                  'away_defense_areas', 'home_offense_vor',
+                  'home_defense_vor', 'away_offense_vor',
+                  'away_defense_vor', 'away_team', 'home_team']
     df['space_dif'] = df.away_defense_areas - df.home_defense_areas
     df['home_win'] = np.sign(df.home_points - df.away_points)
     df = df[df.home_offense_areas > 80]
@@ -439,10 +452,6 @@ def plot_teams_ability_to_space_defense(spacing_data):
     plt.close()
 
     return None
-
-
-
-
 
 
 if __name__ == "__main__":
