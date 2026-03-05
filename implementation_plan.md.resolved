@@ -1,0 +1,141 @@
+# Shot Prediction Neural Network
+
+Build a NN to predict shot success probability using positional tracking data, reproducing the baseline 16 features from prior work and extending with novel spatial, physics-based, and player archetype features.
+
+## What You Already Have (in [game.py](file:///c:/Users/juanm/Documents/KUL_MAI/TFM/TFM-KUL-Juan/game.py))
+
+| Capability | Method | What it gives us |
+|---|---|---|
+| Player positions per frame | [_get_moment_details()](file:///c:/Users/juanm/Documents/KUL_MAI/TFM/TFM-KUL-Juan/game.py#627-691) | x, y for all 10 players + ball |
+| Shot detection | [_get_player_actions()](file:///c:/Users/juanm/Documents/KUL_MAI/TFM/TFM-KUL-Juan/game.py#605-626) | Frame times for made/missed FGs |
+| Velocity & acceleration | [get_player_physics()](file:///c:/Users/juanm/Documents/KUL_MAI/TFM/TFM-KUL-Juan/game.py#1233-1286) | [vx, vy] and [ax, ay] per player |
+| Time-to-reach | [_time_to_reach()](file:///c:/Users/juanm/Documents/KUL_MAI/TFM/TFM-KUL-Juan/game.py#1001-1069) | Physics-based time for player to reach a point |
+| Voronoi areas | [get_voronoi_areas()](file:///c:/Users/juanm/Documents/KUL_MAI/TFM/TFM-KUL-Juan/game.py#944-1000) | Court area controlled by each team |
+| Space control | [get_space_control()](file:///c:/Users/juanm/Documents/KUL_MAI/TFM/TFM-KUL-Juan/game.py#1070-1170) | Heatmap of delta-distance or delta-time |
+| Convex hull | [get_spacing_area()](file:///c:/Users/juanm/Documents/KUL_MAI/TFM/TFM-KUL-Juan/game.py#922-943) | Team spacing area |
+| Offensive team | [get_offensive_team()](file:///c:/Users/juanm/Documents/KUL_MAI/TFM/TFM-KUL-Juan/game.py#1176-1211) | Which team has the ball |
+| Shot clock | `moments['shot_clock']` | Time remaining |
+
+## Proposed Changes
+
+### Phase 1: Player Archetype Clustering
+
+#### [NEW] [player_archetypes.py](file:///c:/Users/juanm/Documents/KUL_MAI/TFM/TFM-KUL-Juan/player_archetypes.py)
+
+Use K-means to bin players into archetype categories, replacing raw player IDs (which would overfit).
+
+**Shooter clustering metrics** (aggregated per-player across games):
+
+| Metric | Source | Rationale |
+|---|---|---|
+| FG% by zone (paint/mid/3pt) | pbp + positions | Core shooting ability profile |
+| Avg shot distance | positions at shot time | Range preference |
+| Catch-and-shoot % | velocity at shot time | Ball-handler vs spot-up |
+| Shot volume (attempts/min) | pbp | High-volume vs selective |
+| Avg shooter speed at shot | [get_player_physics()](file:///c:/Users/juanm/Documents/KUL_MAI/TFM/TFM-KUL-Juan/game.py#1233-1286) | Stationary vs off-movement |
+
+**Defender clustering metrics**:
+
+| Metric | Source | Rationale |
+|---|---|---|
+| Avg contest distance | positions when opponent shoots | Close-out ability |
+| Avg time-to-contest | [_time_to_reach()](file:///c:/Users/juanm/Documents/KUL_MAI/TFM/TFM-KUL-Juan/game.py#1001-1069) | Recovery speed |
+| Avg speed while defending | [get_player_physics()](file:///c:/Users/juanm/Documents/KUL_MAI/TFM/TFM-KUL-Juan/game.py#1233-1286) | Activity level |
+| Shots defended per min | pbp + proximity | Defensive engagement |
+
+**Validation approach for K:**
+1. **Elbow method**: Plot inertia vs K (K=2..10), look for diminishing returns
+2. **Silhouette score**: Maximize average silhouette across clusters
+3. **Downstream validation**: Compare model accuracy across K values — the K that maximizes shot prediction AUC wins
+
+> [!NOTE]
+> Expected outcome: ~3-5 shooter types (e.g., "elite volume", "catch-and-shoot specialist", "paint scorer", "selective midrange") and ~3-4 defender types (e.g., "rim protector", "perimeter lockdown", "help defender").
+
+---
+
+### Phase 2: Feature Extraction
+
+#### [NEW] [shot_features.py](file:///c:/Users/juanm/Documents/KUL_MAI/TFM/TFM-KUL-Juan/shot_features.py)
+
+For each shot attempt: identify shooter from pbp, find frame, compute features.
+
+**Baseline 16 features** (reproducing prior work):
+
+| # | Feature | Computation |
+|---|---|---|
+| 1 | [dist](file:///c:/Users/juanm/Documents/KUL_MAI/TFM/TFM-KUL-Juan/game.py#1171-1176) | Euclidean distance shooter → nearest basket |
+| 2 | `x` | Shooter x-coordinate |
+| 3 | `y` | Shooter y-coordinate |
+| 4 | `shot_angle` | Angle of shot vector w.r.t. court center line |
+| 5 | `closest_def_dist` | Min distance shooter → any defender |
+| 6 | `closest_def_angle` | Closest defender angle w.r.t. shooter→basket |
+| 7 | `num_close_defs` | Defenders within 4 feet |
+| 8 | `shot_clock` | From `moments.shot_clock` |
+| 9-10 | `shooter_par/perp_vel` | Shooter velocity decomposed into parallel/perpendicular to shot vector |
+| 11-12 | `def_par/perp_vel` | Same for closest defender |
+| 13-14 | `shooter_par/perp_acc` | Shooter acceleration decomposed |
+| 15-16 | `def_par/perp_acc` | Same for closest defender |
+
+**Novel features** (your improvements):
+
+| # | Feature | Rationale |
+|---|---|---|
+| 17 | `time_to_contest` | Physics-based δ_time from Lyon 3pt (proven > δ_space) |
+| 18 | `offense_convex_hull` | Team spacing — correlated with ball movement quality |
+| 19 | `defense_convex_hull` | How spread the defense is |
+| 20 | `space_control_at_shot` | Delta-time control value at shooter position |
+| 21 | `is_catch_and_shoot` | Binary: different biomechanics & accuracy profiles |
+| 22 | `2nd_closest_def_dist` | Help defense pressure |
+| 23 | `2nd_closest_def_time` | Help defense time-to-reach |
+| 24 | `is_3_pointer` | Hard reward boundary (2pt vs 3pt) |
+| 25 | `shooter_archetype` | K-means cluster ID (one-hot encoded) |
+| 26 | `defender_archetype` | K-means cluster ID for closest defender (one-hot encoded) |
+
+> [!IMPORTANT]
+> **Target variable**: `made_shot` (binary) from pbp (`EVENTMSGTYPE == 1` → made, `== 2` → missed).
+
+---
+
+### Phase 3: Neural Network
+
+#### [NEW] [shot_model.py](file:///c:/Users/juanm/Documents/KUL_MAI/TFM/TFM-KUL-Juan/shot_model.py)
+
+Architecture inspired by EPV MIT (4 layers, 512 neurons), adapted:
+
+```
+Input (continuous features + one-hot archetypes)
+→ BatchNorm
+→ Dense(256) + ReLU + Dropout(0.3)
+→ Dense(256) + ReLU + Dropout(0.3)  
+→ Dense(128) + ReLU + Dropout(0.2)
+→ Dense(64) + ReLU + Dropout(0.2)
+→ Dense(1) + Sigmoid
+```
+
+- **Loss**: Binary cross-entropy  
+- **Optimizer**: Adam + learning rate scheduling  
+- **Evaluation**: Accuracy, AUC-ROC, calibration plot  
+- **Split**: 70/15/15 train/val/test  
+- **Framework**: PyTorch
+
+> [!NOTE]
+> Baseline target: 63% accuracy (prior work). Goal: beat this with novel features + archetypes.
+
+## Configuration
+
+- **Data scope**: Single game — GSW @ DEN (01.13.2016)
+- **Conda environment**: `mecasport`
+- **Total features**: 16 baseline + 10 novel = 26 (+ one-hot expansion for archetypes)
+
+## Verification Plan
+
+### Automated Tests
+- Sanity-check features on 1 shot (manual distance calculation)
+- No NaN leaks in feature matrix
+- Model trains without errors
+
+### Manual Verification
+- Accuracy vs 63% baseline
+- Feature importance / SHAP analysis — do novel features (time_to_contest, archetypes) actually help?
+- Calibration plot: predicted probabilities ≈ actual make rates
+- Ablation study: model with/without archetypes, with/without physics features
