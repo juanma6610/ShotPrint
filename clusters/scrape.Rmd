@@ -1,0 +1,275 @@
+Some scraping of the NBA API to get some defensive stats
+
+
+https://www.nba.com/stats/players/defense-dash-3pt?dir=A&sort=PLAYER_NAME
+```{r}
+# Install these if you don't have them: install.packages(c("httr", "jsonlite"))
+library(httr)
+library(jsonlite)
+library(dplyr)
+
+# 1. The exact hidden API endpoint for Player Tracking Defense
+url <- "https://stats.nba.com/stats/leaguedashptdefend"
+
+# 2. Define the exact API categories and the suffixes we want to add to the columns
+categories <- c("Overall", "3-Pointers", "Less Than 6 Ft", "Less Than 15 Ft", "2-Pointers")
+suffixes <- c("_OVERALL", "_3P", "_LT_6", "_LT_15", "_2P")
+
+# 2. The "Fake ID" headers (Mandatory: do not change these)
+headers <- c(
+  `Connection` = 'keep-alive',
+  `Accept` = 'application/json, text/plain, */*',
+  `User-Agent` = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  `Referer` = 'https://www.nba.com/',
+  `Origin` = 'https://www.nba.com'
+)
+
+# 3. The parameters for your specific season
+# Note: I set this to "2018-19" based on your earlier graph code, but change it if needed!
+params <- list(
+  College = "", Conference = "", Country = "", 
+  DefenseCategory = "Greater Than 15Ft", # "Overall" gives DFG%. Can also be "3-Pointers" or "Less Than 6 Ft"
+  DraftPick = "", DraftYear = "", Height = "", 
+  LastNGames = "0", LeagueID = "00", Location = "", 
+  Month = "0", OpponentTeamID = "0", Outcome = "", 
+  PORound = "0", 
+  PerMode = "PerGame", # Or use "Totals" / "Per100Possessions"
+  PlayerPosition = "", 
+  Season = "2015-16",  # <-- CHANGE THIS TO MATCH YOUR OFFENSIVE DATA
+  SeasonSegment = "", SeasonType = "Regular Season", 
+  TeamID = "0", Weight = ""
+)
+
+# 4. Make the request to the NBA servers
+response <- GET(url, add_headers(.headers=headers), query = params)
+
+# 5. Unpack the JSON response into a clean R dataframe
+json_data <- fromJSON(content(response, "text", encoding = "UTF-8"))
+
+# The NBA buries the actual data inside a nested list. This extracts it:
+col_names <- json_data$resultSets$headers[[1]]
+data_rows <- json_data$resultSets$rowSet[[1]]
+
+fifte_nba_tracking_defense <- as.data.frame(data_rows, stringsAsFactors = FALSE)
+colnames(fifte_nba_tracking_defense) <- col_names
+
+# 6. Clean up the variable types (everything comes in as character text)
+fifte_nba_tracking_defense <- fifte_nba_tracking_defense %>%
+  mutate(across(c(4:ncol(.)), as.numeric))
+
+# Check out your new data!
+head(fifte_nba_tracking_defense)
+```
+
+
+https://www.nba.com/stats/players/opponent-shooting?Season=2015-16&DistanceRange=By+Zone
+```{r}
+library(httr)
+library(jsonlite)
+library(dplyr)
+
+# 1. API endpoint
+url <- "https://stats.nba.com/stats/leaguedashplayershotlocations"
+
+headers <- c(
+  `Connection` = 'keep-alive',
+  `Accept` = 'application/json, text/plain, */*',
+  `User-Agent` = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  `Referer` = 'https://www.nba.com/',
+  `Origin` = 'https://www.nba.com'
+)
+
+# 2. Parameters for Opponent Shooting By Zone
+params <- list(
+  College = "", Conference = "", Country = "", DateFrom = "", DateTo = "",
+  DistanceRange = "By Zone", 
+  Division = "", DraftPick = "", DraftYear = "", GameScope = "", GameSegment = "",
+  Height = "", LastNGames = "0", LeagueID = "00", Location = "",
+  MeasureType = "Opponent",  # Opponent shooting
+  Month = "0", OpponentTeamID = "0", Outcome = "", PORound = "0", PaceAdjust = "N",
+  PerMode = "PerGame", Period = "0", PlayerExperience = "", PlayerPosition = "",
+  PlusMinus = "N", Rank = "N", Season = "2015-16", SeasonSegment = "",
+  SeasonType = "Regular Season", ShotClockRange = "", StarterBench = "",
+  TeamID = "0", VsConference = "", VsDivision = "", Weight = ""
+)
+
+# 3. Hit the API
+print("Scraping Opponent Shooting By Zone...")
+response <- GET(url, add_headers(.headers=headers), query = params)
+json_data <- fromJSON(content(response, "text", encoding = "UTF-8"))
+
+# 4. THE FIX: Smart Data Extraction
+# This checks if the NBA sent an array (needs [[1]]) or a direct object
+if ("data.frame" %in% class(json_data$resultSets)) {
+  raw_headers <- json_data$resultSets$headers[[1]]
+  data_rows <- json_data$resultSets$rowSet[[1]]
+} else {
+  raw_headers <- json_data$resultSets$headers
+  data_rows <- json_data$resultSets$rowSet
+}
+
+# 5. Smart Header Parsing
+# This safely checks for the NBA's annoying "double headers"
+if (is.data.frame(raw_headers) && "columnNames" %in% names(raw_headers)) {
+  top_headers <- raw_headers$columnNames[[1]]
+  bottom_headers <- raw_headers$columnNames[[2]]
+  top_headers[top_headers == ""] <- "INFO"
+  clean_col_names <- paste(top_headers, bottom_headers, sep = "_")
+} else {
+  # If it's just a normal list of headers, unlist them
+  clean_col_names <- unlist(raw_headers)
+}
+
+# 6. Build the Dataframe safely
+opp_shooting_by_zone <- as.data.frame(data_rows, stringsAsFactors = FALSE)
+
+# Force the column names to map perfectly
+colnames(opp_shooting_by_zone) <- clean_col_names[1:ncol(opp_shooting_by_zone)]
+
+# 7. Clean up the math columns 
+# (Columns 1 to 5 are Name/Team info, everything 6 and beyond is stats)
+opp_shooting_by_zone <- opp_shooting_by_zone %>%
+  rename(PLAYER_NAME = INFO_PLAYER_NAME) %>% # Rename for easy joining later
+  mutate(across(c(6:ncol(.)), as.numeric))
+
+# Let's see the data!
+View(opp_shooting_by_zone)
+```
+
+
+
+Now clean up the dataframes and order them properly
+```{r}
+#write.csv(opp_shooting_by_zone, "opp_shooting_by_zone.csv", row.names = FALSE)
+library(dplyr)
+
+clean_opp_shooting <- opp_shooting_by_zone %>%
+  rename(
+    PLAYER_ID = `Restricted Area_PLAYER_ID`,
+    PLAYER_NAME = `In The Paint (Non-RA)_PLAYER_NAME`,
+    TEAM_ID = `Mid-Range_TEAM_ID`,
+    TEAM_ABBREVIATION = `Left Corner 3_TEAM_ABBREVIATION`,
+    AGE = `Right Corner 3_AGE`,
+    NICKNAME = `Above the Break 3_NICKNAME`,
+    
+    # Restricted Area
+    Restricted_Area_FGM = `Backcourt_OPP_FGM`,
+    Restricted_Area_FGA = `Corner 3_OPP_FGA`,
+    Restricted_Area_FG_PCT = `Restricted Area_OPP_FG_PCT`,
+    
+    # In the Paint (Non-RA)
+    In_The_Paint_FGM = `In The Paint (Non-RA)_OPP_FGM`,
+    In_The_Paint_FGA = `Mid-Range_OPP_FGA`,
+    In_The_Paint_FG_PCT = `Left Corner 3_OPP_FG_PCT`,
+    
+    # Mid-Range
+    Mid_Range_FGM = `Right Corner 3_OPP_FGM`,
+    Mid_Range_FGA = `Above the Break 3_OPP_FGA`,
+    Mid_Range_FG_PCT = `Backcourt_OPP_FG_PCT`,
+    
+    # Left Corner 3
+    Left_Corner_3_FGM = `Corner 3_OPP_FGM`,
+    Left_Corner_3_FGA = `Restricted Area_OPP_FGA`,
+    Left_Corner_3_FG_PCT = `In The Paint (Non-RA)_OPP_FG_PCT`,
+    
+    # Right Corner 3
+    Right_Corner_3_FGM = `Mid-Range_OPP_FGM`,
+    Right_Corner_3_FGA = `Left Corner 3_OPP_FGA`,
+    Right_Corner_3_FG_PCT = `Right Corner 3_OPP_FG_PCT`,
+    
+    # Above the Break 3
+    Above_the_Break_3_FGM = `Above the Break 3_OPP_FGM`,
+    Above_the_Break_3_FGA = `Backcourt_OPP_FGA`,
+    Above_the_Break_3_FG_PCT = `Corner 3_OPP_FG_PCT`,
+    
+    # Corner 3 Combined
+    Corner_3_FGM = `Left Corner 3_OPP_FGM`,
+    Corner_3_FGA = `Right Corner 3_OPP_FGA`,
+    Corner_3_FG_PCT = `Above the Break 3_OPP_FG_PCT`,
+    
+    # Backcourt
+    Backcourt_FGM = `Restricted Area_OPP_FGM`,
+    Backcourt_FGA = `In The Paint (Non-RA)_OPP_FGA`,
+    Backcourt_FG_PCT = `Mid-Range_OPP_FG_PCT`
+  )
+
+# Verify the fix!
+View(clean_opp_shooting)
+```
+
+```{r}
+library(dplyr)
+library(purrr)
+library(tidyr)
+
+# 1. Build your list of dataframes
+def_data_list <- list(
+  ten_nba_tracking_defense,
+  fifte_nba_tracking_defense,
+  two_nba_tracking_defense,
+  six_nba_tracking_defense,
+  three_nba_tracking_defense,
+  overall_nba_tracking_defense
+)
+
+# 2. Create a matching list of suffixes for those 6 dataframes
+suffixes <- c("_10FT", "_15FT", "_2P", "_6FT", "_3P", "_OVERALL")
+
+# 3. Clean AND Rename in one shot!
+def_data_list_clean <- purrr::map2(def_data_list, suffixes, function(df, suffix) {
+  df %>%
+    # First, drop the junk columns
+    select(
+      -contains("TEAM"),
+      -starts_with("GP"),
+      -starts_with("G"),
+      -starts_with("FREQ"),
+      -starts_with("AGE"),
+      -starts_with("CLOSE_DEF_PERSON_ID"),
+      -starts_with("PLAYER_POSITION")
+    ) %>%
+    # Second, stick the suffix onto every remaining column EXCEPT the player's name
+    rename_with(~paste0(., suffix), .cols = -PLAYER_NAME)
+})
+
+# 4. Merge the newly tagged list!
+clean_defensive_tracking <- purrr::reduce(def_data_list_clean, full_join, by = "PLAYER_NAME") %>%
+  # Convert everything to numbers and fill NAs with 0
+  mutate(across(-PLAYER_NAME, as.numeric)) %>%
+  mutate(across(everything(), ~replace_na(.x, 0)))
+
+# Behold your final, beautifully labeled defensive matrix!
+View(clean_defensive_tracking)
+```
+
+
+```{r}
+library(dplyr)
+library(tidyr)
+
+# The Ultimate Cleanup Pipeline
+clean_defensive_tracking <- all_defensive_tracking %>%
+  # 1. Drop TEAM, GP, G, and FREQ columns safely
+  select(
+    -contains("TEAM"),
+    -starts_with("GP_"),   # Drops GP_OVERALL, GP_3P, etc.
+    -starts_with("G_"),    # Drops G_OVERALL, G_3P, etc. (Safe from FGM)
+    -starts_with("FREQ_")  # Drops FREQ_OVERALL, FREQ_3P, etc.
+  ) %>%
+  # 2. Convert all stats to numbers
+  mutate(across(-PLAYER_NAME, as.numeric)) %>%
+  # 3. Fill in the NAs with 0
+  mutate(across(everything(), ~replace_na(.x, 0)))
+
+# Take a look at your perfectly filtered metrics!
+View(clean_defensive_tracking)
+```
+
+
+
+```{r}
+#write.csv(opp_shooting_by_zone, "opp_shooting_by_zone.csv", row.names = FALSE)
+write.csv(clean_defensive_tracking, "defensive_tracking.csv", row.names = FALSE)
+
+```
+
