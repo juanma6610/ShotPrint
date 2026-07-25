@@ -62,7 +62,8 @@ class Game(object):
     analysis and plotting.
     """
 
-    def __init__(self, date, team1, team2, game_7z=None, temp_dir='temp', verbose=True):
+    def __init__(self, date, team1, team2, game_7z=None, temp_dir='temp', verbose=True,
+                 tracking_url=None):
         """
         Args:
             date (str): 'MM.DD.YYYY', date of game
@@ -73,6 +74,11 @@ class Game(object):
             game_7z (str): optional, the full name of the 7z file (e.g. '01.13.2016.GSW.at.DEN.7z')
             temp_dir (str): directory to download and extract tracking data for processing
             verbose (bool): whether to print status messages
+            tracking_url (str): optional, full URL to the tracking .7z. Overrides the
+                default sealneaward mirror — use it to pull a game from an alternate
+                source (e.g. the linouk23 repo) when the default mirror's copy is
+                missing or corrupt. The play-by-play events are still fetched from the
+                sealneaward mirror keyed on the game_id parsed from the tracking json.
 
         Attributes:
             date (str): 'MM.DD.YYYY', date of game
@@ -123,7 +129,7 @@ class Game(object):
         self.temp_dir = temp_dir
         os.makedirs(self.temp_dir, exist_ok=True)
         
-        self.datalink = f"https://raw.githubusercontent.com/sealneaward/nba-movement-data/master/data/{self.tracking_id}.7z"
+        self.datalink = tracking_url or f"https://raw.githubusercontent.com/sealneaward/nba-movement-data/master/data/{self.tracking_id}.7z"
         self.tracking_data = None
         self.game_id = None
         self.pbp = None
