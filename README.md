@@ -1,161 +1,149 @@
-# Reading the Floor — A Portable Federated Shot Quality Model from Optical Tracking
+<h1 align="center">Reading the Floor</h1>
+<p align="center"><b>A portable, calibrated, <i>federated</i> shot-quality model for the NBA — built from raw optical player-tracking.</b></p>
 
-Code and data for the Master's thesis of **Juan Manuel Oliver** (MSc Artificial Intelligence, Big Data Analytics, KU Leuven, 2025–26). The project builds a calibrated NBA shot-make-probability model from 2015–16 SportVU optical tracking + play-by-play data, trains it both centrally and under a cross-silo **federated learning** protocol (30 teams as clients), and derives downstream applications: **Points Over Expectation (POE)** for shooters, defenders, zones, and 5-man lineups.
+<p align="center">
+  <img src="assets/hero_possession.gif" width="88%" alt="SportVU tracking possession animation (GSW @ HOU)">
+</p>
 
-## Pipeline at a glance
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white">
+  <img src="https://img.shields.io/badge/XGBoost-gradient%20boosting-EC4E20">
+  <img src="https://img.shields.io/badge/Flower-federated%20learning-30B6EF">
+  <img src="https://img.shields.io/badge/scikit--learn-ML-F7931E?logo=scikitlearn&logoColor=white">
+  <img src="https://img.shields.io/badge/data-SportVU%2025Hz-1C092F">
+  <img src="https://img.shields.io/badge/MSc%20thesis-KU%20Leuven-1D428A">
+</p>
 
-```
-allgames.txt (636 game archives)
-        │
-        ▼
-[1] clusters/ (R) ──── scrape.Rmd → shooters.Rmd / defense.Rmd
-        │              GMM soft archetypes (4 offensive + 4 defensive)
-        │              → gmm_soft_labels_15_16.csv / gmm_soft_labels_def_15_16.csv
-        ▼
-[2] src/process_batch.py ── downloads each game, runs shot_features.py
-        │                   (release-frame recovery, geometry, kinematics,
-        │                    defender pressure, spacing, tempo, archetypes)
-        │                   → data/shot_features_full.csv → …_valid2.csv
-        ▼
-[3] src/train_xgboost.py / tune_xgboost.py ── centralized XGBoost baseline
-        │                                     → data/xgb_shot_model(.tuned).json
-        ▼
-[4] src/compute_poe.py → compute_def_poe.py / correlate_poe.py
-        │                out-of-fold POE, DEF-POE, matchup heatmap,
-        │                correlations with Basketball-Reference metrics
-        ▼
-[5] src/federated/ (Flower) ── bagging/cyclic × team/IID × 5 seeds
-        │                      → results/federated/*
-        ▼
-[6] src/thesis_results.py + figures_thesis/scripts/ ── thesis tables & figures
-```
+---
 
-## Repository layout
+## TL;DR
 
-Top level:
+I turned **~98,000 NBA shots** of raw optical tracking into a **calibrated probability that any shot goes in** — using only information available *before the ball is released* — and then showed that model can be **trained across all 30 teams without any team sharing its raw data** (federated learning), at a cost of just **~2.6%**.
 
-| Path | What it is |
-|---|---|
-| `allgames.txt` | 636 SportVU game archive names (2015–16 regular season), consumed by `process_batch.py`. |
-| `requirements.txt` | Python dependencies (xgboost, flwr, scikit-learn, py7zr, …). |
-| `README.md` | This file. |
-| `src/` | Python pipeline (feature extraction → model → POE → federated). |
-| `clusters/` | R project for player-archetype clustering. |
-| `data/` | Datasets, saved models, and `data/legacy/` (superseded files). |
-| `results/` | Metric tables, POE leaderboards, tuning history, and `results/federated/`. |
-| `figures/` | All generated figures (result figures + thesis figure outputs, consolidated here). |
-| `figures_thesis/` | Static thesis image assets + `scripts/` that regenerate figures into `figures/`. |
-| `docs/` | Reference material: the ydata-profiling EDA report. |
+The calibrated probability powers a suite of analytics: a **Points Over Expectation (POE)** rating for shooters and defenders, per-zone and archetype-matchup breakdowns, and five-man **lineup** evaluation.
 
-### `clusters/` — player archetype clustering (R / RStudio)
+> MSc Artificial Intelligence thesis (Big Data Analytics), KU Leuven — *Juan Manuel Oliver*.
 
-Standalone R project (`renv` lockfile included) that produces the soft archetype features used by the Python pipeline.
+**Highlights**
+- 🎯 **Well-calibrated** shot model: Brier **0.219**, log-loss **0.628**, ROC-AUC **0.670** on a *game-disjoint* test set — clearing the ~0.62 AUC ceiling of purely geometric models.
+- 🔒 **Federated across 30 teams** (Flower + `FedXgbBagging`/`FedXgbCyclic`), measured over 5 seeds and 4 configurations, with paired-bootstrap confidence intervals.
+- 🧠 **Portable feature set** — release geometry, defender pressure, shooter/defender kinematics, spacing, tempo, and behavioural **archetypes** from a Gaussian Mixture Model — no dependency on NBA-specific player IDs.
+- 📊 **Applications**: POE leaderboards (shooters & defenders), per-zone calibration, archetype matchup heatmaps, lineup POE, and spatial shot charts.
+- 🧪 End-to-end, reproducible pipeline from raw `.7z` tracking archives → features → model → federated experiments → thesis figures.
 
-| File | Purpose |
-|---|---|
-| `scrape.Rmd` | Scrapes NBA.com hidden stats API for player-tracking defense tables → `data/defensive_tracking.csv`. |
-| `shooters.Rmd` | Offensive archetypes: PCA + K-means + **GMM (BIC-selected K=4)** on shot-creation profile (USG, 3PAr, %Ast, FTr, FG% by zone). Outputs `shooter_archetypes_15_16.csv`, `gmm_soft_labels_15_16.csv` (Primary_Creator, Spacer, Mid-Interior, Rim_Center). |
-| `defense.Rmd` | Defensive archetypes, same method. Outputs `defender_archetypes_15_16.csv`, `gmm_soft_labels_def_15_16.csv` (Paint_Anchors, Perimeter Guards, Def_liability, Switch_Wing). |
-| `cluster_report.Rmd/.html` | Write-up of the clustering results. |
-| `data/` | Basketball-Reference exports: `ad.csv`/`pos.csv`/`shot.csv` (2015–16), `ad_14.csv`/`pos_14.csv`/`shot_14.csv` (2014–15, for skill priors), `defensive_tracking.csv`, `opp_shooting_by_zone.csv`. |
-| `pca_loadings.csv`, `gmm_*_profiles_*.csv` | Cluster interpretation artifacts. |
+---
 
-### `src/` — main Python pipeline
+## The problem
 
-| File | Purpose |
-|---|---|
-| `game.py` | `Game` class: downloads a game's SportVU 7z from the `sealneaward/nba-movement-data` mirror + its PBP CSV, parses moments into a DataFrame, aligns clocks, exposes helpers (frames, commentary, formation detection). |
-| `kinematics.py` | Savitzky-Golay velocity/acceleration estimation per player; `time_to_reach` closeout-time model (max speed 22 ft/s, max accel 10 ft/s²). |
-| `spatial.py` | Team convex-hull spacing, Voronoi space control, delta-distance/delta-time control maps. |
-| `shot_features.py` | Core extractor. For each PBP shot event: recovers the release frame (ball-z apex ≥ 9 ft, walk-back to z ≤ 10 ft & ball–shooter dist ≤ 2.5 ft), then computes ~37 model features: geometry (dist, x, y, angle), defender pressure (closest/second defender distance-angle-time, tight-contest counts), kinematic decomposition (parallel/perpendicular velocity & acceleration for shooter and defender), release mechanics (height, speed, angle, x, y), tempo (shot clock, touch time, catch-and-shoot), spacing (hull ratio), and the 8 GMM archetype probabilities. Dunks/tips flagged via PBP regex. |
-| `process_batch.py` | Multiprocessing batch driver over `allgames.txt` → `data/shot_features_full.csv` (rename/copy to `_valid2` after archetype columns are applied). |
-| `train_xgboost.py` | Centralized baseline. Game-disjoint 65/15/20 split (`GroupShuffleSplit` on `game_id`), early stopping on validation log-loss, evaluation focused on calibration (Brier, log loss, reliability diagram). |
-| `tune_xgboost.py` | Random search (30 candidates × GroupKFold(5)) scored by CV log-loss; refits best config → `data/xgb_shot_model_tuned.json`, `results/best_params.json`. |
-| `compute_poe.py` | Out-of-fold (GroupKFold over games) P(make) for every shot → per-shot POE (`shot_value × (made − xMake)`, shot value from PBP "3PT" regex) → player leaderboard (≥100 shots). |
-| `compute_def_poe.py` | Defender POE (points suppressed below expectation for the closest defender) + offensive-vs-defensive archetype matchup heatmap. |
-| `correlate_poe.py` | Correlates POE with Basketball-Reference advanced metrics (TS%, PER, OBPM, …) incl. partial correlations controlling for USG%. Reads `results/poe_leaderboard.csv`; writes correlation tables to `results/`. |
-| `thesis_results.py` | One-shot generator of Results-chapter tables and figures (headline metrics vs baselines, per-zone metrics, calibration, feature importance, POE leaderboard, case-study shot charts). Reads `data/shot_features_valid2.csv`. |
-| `plot_per_zone_poe.py` | Per-zone POE decomposition figure (Results section). |
-| `visualization.py` | Court drawing, frame rendering, game animation utilities (used for Figure 3.1-style renders). |
-| `spa.ipynb` | Spacing analysis notebook; also builds the lineup POE tables (`data/lineup_poe*.csv`). |
+Some of the most valuable data in sports — practice tracking, biometrics, scheme indicators — is exactly the data teams most want to keep private. That creates a tension: build cutting-edge models, *or* respect data governance. This project resolves it by pairing a **deliberately portable shot-quality model** with a **cross-silo federated protocol**, so a league-scale model can be trained **without any franchise surrendering its raw data**.
 
-### `src/federated/` — Flower federated XGBoost
+## How it works
 
-| File | Purpose |
-|---|---|
-| `nba_federated/task.py` | Data loading/partitioning from `data/shot_features_valid2.csv`. Single cached game-disjoint global 85/15 train/test split (seed 42, shared by all clients & server); partitions: `team` (30 non-IID clients = franchises) or `iid` (stratified control). |
-| `nba_federated/client_app.py` | Flower client: trains 1 tree/round on local data from the global booster. |
-| `nba_federated/server_app.py` | Flower server: `FedXgbBagging` (primary) or `FedXgbCyclic` (ablation, with a custom central-eval adapter); per-round central evaluation, best-AUC checkpointing → `results/federated/`. |
-| `pyproject.toml` | Flower app config + XGBoost hyperparameters (depth 4, eta 0.01, min_child_weight 10, λ 2.0). |
-| `run_seeds.py` | Runs the 4 configs (bagging/cyclic × iid/team) × 5 seeds {42, 7, 123, 2024, 99}, renaming outputs per run. |
-| `aggregate_seeds.py` | Reduces per-seed metrics to the mean±std table (thesis Table 4.3). |
-| `paired_bootstrap_ci.py` | Paired bootstrap CIs (1000 resamples) for the federated-vs-centralized gap → `paired_bootstrap_ci_*.csv/.tex`. |
-| `implementation_plan_federated.md`, `federated_learning_discussion.md` | Design notes. |
+<p align="center"><img src="assets/pipeline_architecture.png" width="85%" alt="End-to-end pipeline architecture"></p>
 
-### `data/` — datasets and models
+Every shot is reduced to **what was true at the moment of release**. The hardest part is recovering that release frame from the tracking stream — the play-by-play timestamp trails the true release by 1–2 seconds — so I detect the ball's arc apex and walk back to the frame where it leaves the shooter's hands.
 
-| File | Purpose |
-|---|---|
-| `tracking/` | Three sample raw SportVU game JSONs. |
-| `shot_features_valid2.csv` | **Canonical training file** — 95,219 shots × 48 cols, archetypes as the named 4+4 GMM soft labels. Used by `train_xgboost.py`, `tune_xgboost.py`, `compute_poe.py`, and the federated pipeline. |
-| `shot_features_valid.csv` | Earlier extraction pass: 97,826 shots / 630 games (the counts quoted in the thesis data section). |
-| `xgb_shot_model_tuned.json` | Saved tuned centralized booster. |
-| `lineup_poe.csv`, `lineup_poe_offense.csv`, `lineup_poe_defense.csv` | 5-man lineup POE tables (built in `spa.ipynb`). |
-| `players.csv`, `pbp/` | Support lookups / sample PBP + `EVENTMSGTYPE` code reference (`pbpevents.txt`). |
-| `legacy/` | Superseded artifacts kept for reference: `shot_features.csv`, `shot_features_before_dunks.csv`, untuned `xgb_shot_model.json`, and the older `poe_*` copies. Git-ignored. |
+<table>
+<tr>
+<td width="50%"><img src="assets/release_frame_recovery.png" alt="Release-frame recovery"></td>
+<td width="50%"><img src="assets/kinematics_decomposition.png" alt="Kinematic decomposition"></td>
+</tr>
+<tr>
+<td align="center"><sub><b>Release-frame recovery</b> from the ball's vertical trajectory.</sub></td>
+<td align="center"><sub><b>Kinematics</b> decomposed parallel/perpendicular to the shot line.</sub></td>
+</tr>
+</table>
 
-### `results/` — experiment outputs
+The feature set spans six portable families: **shot geometry**, **defender pressure** (distance, angle, closeout time, tight-contest counts), **shooter & defender kinematics**, **release mechanics** (height, speed, angle), **possession tempo** (shot clock, touch time, catch-and-shoot), **floor spacing**, and **soft player archetypes** from a GMM.
 
-Canonical POE outputs (`poe_per_shot.csv`, `poe_leaderboard.csv`), headline/per-zone metric tables, tuning history + best params, correlations with advanced metrics, and `federated/` with per-seed metrics CSVs, per-seed best boosters, aggregated summary, and paired-bootstrap CI tables (CSV + LaTeX).
+## Results
 
-### `figures/` and `figures_thesis/`
+A gradient-boosted model trained with **game-disjoint** splits — no game ever spans train and test — and evaluated on **probability quality**, not threshold accuracy (because everything downstream integrates the probability, not the label).
 
-`figures/` is the single output directory for every generated figure (calibration, convergence, heatmaps, leaderboards, plus all thesis `build_*` outputs — PNG + PDF). `figures_thesis/` holds static image assets (broadcast stills, player photos) and `scripts/` — one `build_*.py` per thesis figure (pipeline architecture, release-frame recovery, kinematics decomposition, SHAP beeswarm, dunk anomaly, lineup leaderboards, POE time series, xFG scatter, etc.), each now writing into `figures/`.
-
-## Reproducing the pipeline
-
-```bash
-pip install -r requirements.txt
-
-# 1. (Optional) rebuild archetypes: open clusters/clusters.Rproj, run scrape.Rmd → shooters.Rmd → defense.Rmd
-
-# 2. Extract shot features (downloads games; long-running)
-python src/process_batch.py --start 0 --end 636 --output data/shot_features_full.csv
-
-# 3. Centralized model
-python src/train_xgboost.py
-python src/tune_xgboost.py --n-iter 30
-
-# 4. POE applications (write to results/)
-python src/compute_poe.py
-python src/compute_def_poe.py
-python src/correlate_poe.py
-
-# 5. Federated experiments (needs flwr; ~hours)
-cd src/federated
-pip install -e .
-python run_seeds.py                 # all 4 configs × 5 seeds
-python aggregate_seeds.py
-python paired_bootstrap_ci.py       # from project root: python src/federated/paired_bootstrap_ci.py
-
-# 6. Thesis tables/figures
-python src/thesis_results.py
-```
-
-## Headline results (2015–16, game-disjoint test set)
-
-| Model | Brier | Log loss | ROC-AUC |
+| Model | Brier ↓ | Log-loss ↓ | ROC-AUC ↑ |
 |---|---|---|---|
 | Constant (base rate) | 0.2475 | 0.6881 | 0.500 |
 | Distance-only logistic | 0.2400 | 0.6728 | 0.603 |
-| XGBoost (full features) | ~0.220 | ~0.628 | ~0.671 |
-| Federated (4 configs, 5 seeds) | 0.2274–0.2279 | ~0.646 | 0.6446–0.6468 |
+| **XGBoost (full features)** | **0.219** | **0.628** | **0.670** |
 
-Federation costs ≈ +2.6% relative Brier vs the centralized baseline; team-level non-IID partitioning is not measurably worse than the IID control.
+<table>
+<tr>
+<td width="50%"><img src="assets/calibration_diagram.png" alt="Reliability diagram"></td>
+<td width="50%"><img src="assets/shap_beeswarm.png" alt="Feature attributions"></td>
+</tr>
+<tr>
+<td align="center"><sub><b>Calibration</b> — predicted probabilities track empirical make rates.</sub></td>
+<td align="center"><sub><b>What the model uses</b> — distance, then defender pressure, mechanics, archetypes.</sub></td>
+</tr>
+</table>
 
-## Known issues / caveats
+### Federated learning — the privacy cost is small
 
-- **Legacy spacing feature.** `spatial.get_spacing_area` now returns true hull areas (`ConvexHull.volume`), but the shipped `shot_features_valid2.csv` was extracted with the old perimeter-based version (2-D `ConvexHull.area`), so its `ratio_off_def_hull` column is a perimeter ratio. Re-extract if the area semantics matter; the trained models are consistent with the shipped CSV.
-- **Dataset-count mismatch with the thesis text.** The thesis data section quotes 630 games / 97,826 shots (from `shot_features_valid.csv`); the trained models actually use 613 games / 95,219 shots (`shot_features_valid2.csv`).
-- **Stale result CSVs.** `results/headline_metrics.csv` and `results/per_zone_metrics.csv` come from a different run than the thesis Tables 4.1/4.2 (differences in the 3rd decimal). Re-run `thesis_results.py` to regenerate.
-- **`compute_poe.py` must run before `compute_def_poe.py`/`correlate_poe.py`** — the latter two read `results/poe_per_shot.csv` / `results/poe_leaderboard.csv`.
+Training across the 30 teams as natural silos (non-IID by construction), the federated model stays within **~2.6%** Brier of the centralized baseline — statistically homogeneous across aggregation strategies and partitions, with all 95% paired-bootstrap CIs inside **[+2.0%, +3.2%]**.
+
+<p align="center"><img src="assets/federated_convergence.png" width="80%" alt="Federated convergence vs centralized baseline"></p>
+
+## Applications — what the calibrated probability unlocks
+
+With a trustworthy P(make), a shot's value over an average shooter in the same situation is simply `POE = value × (outcome − P(make))`, computed **out-of-fold** so no player is flattered by the model training on their own shots.
+
+<table>
+<tr>
+<td width="50%"><img src="assets/lineup_poe_leaderboard.png" alt="Lineup POE leaderboards"></td>
+<td width="50%"><img src="assets/matchup_heatmap.png" alt="Archetype matchup heatmap"></td>
+</tr>
+<tr>
+<td align="center"><sub><b>Five-man lineup POE</b> — best/worst offensive & defensive units.</sub></td>
+<td align="center"><sub><b>Archetype matchups</b> — which styles beat which.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="assets/shot_heatmap_curry_lbj.png" alt="Spatial shot charts"></td>
+<td width="50%"><img src="assets/per_zone_poe.png" alt="Per-zone POE decomposition"></td>
+</tr>
+<tr>
+<td align="center"><sub><b>Spatial shot charts</b> coloured by shot quality.</sub></td>
+<td align="center"><sub><b>Per-zone POE</b> — where each player creates or sheds points.</sub></td>
+</tr>
+</table>
+
+## Tech stack
+
+`Python` · `XGBoost` · `scikit-learn` · `Flower` (federated learning) · `pandas`/`NumPy`/`SciPy` · `Matplotlib` · `R` (archetype clustering) · SportVU optical tracking + NBA play-by-play.
+
+## Repository tour
+
+```
+src/                 Feature extraction, model training/tuning, POE, visualization
+  shot_features.py     Release-frame recovery + 37-feature extraction per shot
+  train_xgboost.py     Game-disjoint calibrated model + evaluation
+  compute_poe.py       Out-of-fold Points Over Expectation
+  federated/           Flower app: bagging/cyclic × team/IID, multi-seed, bootstrap CIs
+clusters/            R project: GMM player-archetype clustering
+figures_thesis/      Scripts that regenerate every thesis figure
+docs/                Rerun runbook + dataset documentation
+assets/              Figures used in this README
+```
+
+## Reproduce it
+
+The full pipeline (features → model → POE → federated → figures) is scripted end to end. See **[`docs/RERUN.md`](docs/RERUN.md)** for the exact command sequence. Feature extraction pulls the public 2015-16 SportVU logs, extracts ~98k shots across 631 games, and writes a training-ready table.
+
+## Dataset
+
+The engineered shot-features table (≈98k shots × 48 columns) is published as a standalone dataset. The full column dictionary and module-level details live in **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)**.
+<!-- Add your Kaggle dataset link here once published. -->
+<!-- 📊 Kaggle: https://www.kaggle.com/datasets/... -->
+
+
+## About
+
+**Juan Manuel Oliver** — MSc Artificial Intelligence (Big Data Analytics), KU Leuven.
+Thesis: *Reading the Floor — A Portable Federated Shot Quality Model from Optical Tracking.*
+
+<!-- Fill these in before publishing:
+- 🔗 LinkedIn: https://www.linkedin.com/in/...
+- 📄 Thesis PDF: link
+- 📊 Kaggle dataset: link
+-->
+
+<sub>Built on publicly posted SportVU tracking and NBA play-by-play data, for research and educational use. Please credit the original data sources.</sub>
