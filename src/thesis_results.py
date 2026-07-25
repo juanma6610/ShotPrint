@@ -35,7 +35,7 @@ from sklearn.metrics import (
 from sklearn.calibration import calibration_curve
 
 from train_xgboost import load_data, train_xgboost
-from compute_poe import compute_poe, infer_shot_value
+from poe.compute_poe import compute_poe, infer_shot_value
 
 # ------------------------------------------------------------
 # Style — neutral, print-friendly. Override in the thesis template if needed.

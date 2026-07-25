@@ -16,7 +16,7 @@ contributed to during training.
 """
 
 from pathlib import Path
-
+import sys
 import numpy as np
 import pandas as pd
 import xgboost as xgb
@@ -24,7 +24,8 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import GroupKFold
 from sklearn.metrics import brier_score_loss, log_loss, roc_auc_score
 
-from train_xgboost import load_data  # reuse the same metadata-stripping logic
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+from train_xgboost import load_data
 
 RANDOM_STATE = 42
 N_FOLDS = 5

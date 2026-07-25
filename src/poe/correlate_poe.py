@@ -9,7 +9,7 @@ import pandas as pd, numpy as np, unicodedata, re
 from pathlib import Path
 from scipy.stats import pearsonr, spearmanr
 
-BASE = Path(__file__).resolve().parents[1]  # project root
+BASE = Path(__file__).resolve().parents[2]  # project root
 OUT_DIR = BASE / "results"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
