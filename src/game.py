@@ -31,6 +31,30 @@ if not os.path.exists('temp'):
     os.makedirs('temp', exist_ok=True)
 
 
+def _download_with_retry(url, dest, retries=3, backoff=2.0, verbose=True):
+    """
+    Download `url` to `dest`, retrying with exponential backoff.
+
+    This is the main guard against transient GitHub errors (dropped
+    connections, momentary 5xx/timeouts) silently costing a whole game
+    during a long batch run: without it, a single failed request drops
+    that game from the output entirely. Raises the last exception only
+    if every attempt fails.
+    """
+    last_err = None
+    for attempt in range(1, retries + 1):
+        try:
+            urllib.request.urlretrieve(url, dest)
+            return
+        except Exception as e:
+            last_err = e
+            if verbose:
+                print(f"  [download attempt {attempt}/{retries} failed] {url}: {e}")
+            if attempt < retries:
+                time.sleep(backoff * attempt)
+    raise last_err
+
+
 class Game(object):
     """
     Class for basketball game.
@@ -142,7 +166,7 @@ class Game(object):
         if self.verbose:
             print(f"Downloading data from {self.datalink}...")
         try:
-            urllib.request.urlretrieve(self.datalink, f"{self.temp_dir}/game.7z")
+            _download_with_retry(self.datalink, f"{self.temp_dir}/game.7z", verbose=self.verbose)
         except Exception as e:
             if self.verbose:
                 print(f"Error downloading {self.datalink}: {e}")
@@ -197,9 +221,9 @@ class Game(object):
         
         if self.verbose:
             print(f"Downloading play-by-play data from {pbp_link}...")
-        
-        urllib.request.urlretrieve(pbp_link, pbp_filename)
-        
+
+        _download_with_retry(pbp_link, pbp_filename, verbose=self.verbose)
+
         if self.verbose:
             print("Play-by-play download complete.")
         

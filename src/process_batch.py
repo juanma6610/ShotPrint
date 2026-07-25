@@ -73,16 +73,22 @@ def _process_single_game(args):
         gc.collect()
 
 
-def process_batch(start_idx=0, end_idx=50, output_file='data/shot_features_full.csv',
-                  n_workers=None):
+def process_batch(start_idx=0, end_idx=50, output_file='data/shot_features_kaggle.csv',
+                  n_workers=None, resume=True):
     """
     Process games in parallel using multiprocessing.
-    
+
+    Writes results INCREMENTALLY (one game at a time) and records each
+    processed archive in a `<output>.progress` sidecar, so an interrupted
+    run never loses completed work and a rerun resumes where it left off.
+    Failed archives are written to `failed_games.log` next to the output.
+
     Args:
         start_idx: Start index in allgames.txt
-        end_idx: End index in allgames.txt  
+        end_idx: End index in allgames.txt
         output_file: Path to output CSV
         n_workers: Number of parallel workers (default: CPU cores - 1)
+        resume: If True, skip archives already listed in <output>.progress
     """
     if n_workers is None:
         n_workers = max(1, cpu_count() - 1)
@@ -109,49 +115,82 @@ def process_batch(start_idx=0, end_idx=50, output_file='data/shot_features_full.
 
     shooter_map = s_df.set_index('Player').to_dict('index')
     defender_map = d_df.set_index('Player').to_dict('index')
-    
-    # Build task list
-    tasks = [(i, g, shooter_map, defender_map, s_base, d_base) 
-             for i, g in enumerate(games_slice)]
-    
+
+    # --- Resume support: skip archives already recorded as processed ---
+    progress_file = output_file + '.progress'
+    out_dir = os.path.dirname(output_file) or '.'
+    os.makedirs(out_dir, exist_ok=True)
+    failed_log = os.path.join(out_dir, 'failed_games.log')
+
+    done = set()
+    if resume and os.path.exists(progress_file):
+        with open(progress_file) as pf:
+            done = {ln.strip() for ln in pf if ln.strip()}
+        if done:
+            print(f"Resume: {len(done)} archives already processed "
+                  f"(from {progress_file}); skipping them.")
+
+    pending = [(i, g) for i, g in enumerate(games_slice) if g not in done]
+    if not pending:
+        print("Nothing to do — every game in range is already in the output.")
+        return
+
+    # Build task list (only for pending games)
+    tasks = [(i, g, shooter_map, defender_map, s_base, d_base) for i, g in pending]
+
     start_time = time.time()
     success = 0
     failed = 0
     total_shots = 0
     failed_games = []
-    
-    # Process with multiprocessing Pool
-    # Using chunksize=1 so each worker picks up the next available game
+
+    # Process with multiprocessing Pool. Write INCREMENTALLY as each game
+    # finishes (imap_unordered yields on completion) so an interrupted run
+    # never loses completed work; the .progress sidecar lets a rerun resume.
     with Pool(processes=n_workers) as pool:
-        # Wrap pool.imap_unordered in tqdm for the progress bar
-        # This will update dynamically as each worker finishes a game
         iterator = pool.imap_unordered(_process_single_game, tasks, chunksize=1)
-        results = list(tqdm(iterator, total=len(tasks), desc="Processing Games", unit="game", dynamic_ncols=True))
-    
-    # Collect results and write to CSV
-    for game_7z, df, error in results:
-        if df is not None and len(df) > 0:
-            header = not os.path.exists(output_file)
-            df.to_csv(output_file, mode='a', index=False, header=header)
-            success += 1
-            total_shots += len(df)
-        else:
-            failed += 1
-            if error:
-                failed_games.append((game_7z, error))
-    
+        for game_7z, df, error in tqdm(iterator, total=len(tasks),
+                                       desc="Processing Games", unit="game",
+                                       dynamic_ncols=True):
+            if df is not None and len(df) > 0:
+                header = not os.path.exists(output_file)
+                df.to_csv(output_file, mode='a', index=False, header=header)
+                with open(progress_file, 'a') as pf:
+                    pf.write(game_7z + '\n')
+                success += 1
+                total_shots += len(df)
+            else:
+                failed += 1
+                failed_games.append((game_7z, error or 'no shots extracted'))
+
     elapsed = time.time() - start_time
-    
+
+    # Persist the failure list so you can see exactly which archives didn't
+    # make it (genuinely-missing games vs. fixable transient errors).
+    if failed_games:
+        with open(failed_log, 'w') as f:
+            for g, e in failed_games:
+                f.write(f"{g}\t{e}\n")
+
+    # Cumulative unique games in the output across any resumed runs.
+    cumulative = 0
+    if os.path.exists(progress_file):
+        with open(progress_file) as pf:
+            cumulative = len({ln.strip() for ln in pf if ln.strip()})
+
     print(f"\n{'=' * 60}")
     print(f"Batch processing complete in {elapsed:.1f}s")
-    print(f"  Success: {success}/{len(games_slice)} games")
-    print(f"  Failed: {failed}/{len(games_slice)} games")
-    print(f"  Total shots extracted: {total_shots}")
-    print(f"  Avg time per game: {elapsed/max(len(games_slice),1):.1f}s")
+    print(f"  Success this run: {success}/{len(tasks)} games")
+    print(f"  Failed this run:  {failed}/{len(tasks)} games")
+    print(f"  Total shots extracted this run: {total_shots}")
+    print(f"  Avg time per game: {elapsed/max(len(tasks),1):.1f}s")
+    print(f"  Cumulative games in output: {cumulative}")
     if failed_games:
-        print(f"\nFailed games:")
-        for g, e in failed_games:
+        print(f"\nFailed games ({len(failed_games)}) -> {failed_log}")
+        for g, e in failed_games[:20]:
             print(f"  {g}: {e}")
+        if len(failed_games) > 20:
+            print(f"  ... and {len(failed_games) - 20} more (see {failed_log})")
 
 
 def process_batch_sequential(start_idx=0, end_idx=50, output_file='data/shot_features_full.csv'):
@@ -231,9 +270,11 @@ if __name__ == '__main__':
                         help='Number of parallel workers (default: CPU cores - 1)')
     parser.add_argument('--sequential', action='store_true',
                         help='Use sequential mode instead of multiprocessing')
+    parser.add_argument('--no-resume', dest='resume', action='store_false',
+                        help='Reprocess every game even if it is already in <output>.progress')
     args = parser.parse_args()
-    
+
     if args.sequential:
         process_batch_sequential(args.start, args.end, args.output)
     else:
-        process_batch(args.start, args.end, args.output, args.workers)
+        process_batch(args.start, args.end, args.output, args.workers, resume=args.resume)
