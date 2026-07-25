@@ -36,7 +36,7 @@ RANDOM_STATE = 42
 # 1. Data Loading & Preparation
 # ============================================================
 
-def load_data(csv_path='data/shot_features_full.csv'):
+def load_data(csv_path='data/shot_features_valid2.csv'):
     print("Loading dataset...")
     df = pd.read_csv(csv_path)
 

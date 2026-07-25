@@ -106,10 +106,10 @@ def out_of_fold_predict(X, y, groups, n_folds=N_FOLDS):
 # 3. POE pipeline
 # ============================================================
 
-def compute_poe(csv_path='data/shot_features_full.csv',
+def compute_poe(csv_path='data/shot_features_valid2.csv',
                 n_folds=N_FOLDS,
                 min_shots=MIN_SHOTS,
-                out_dir='data'):
+                out_dir='results'):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
