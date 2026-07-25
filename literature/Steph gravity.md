@@ -1,1 +1,0 @@
-Best screener makes two people focus on him

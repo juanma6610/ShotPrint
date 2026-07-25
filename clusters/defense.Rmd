@@ -1,21 +1,16 @@
 Clustering NBA players utilizing K-Means, Gaussian Mixture Models, Principal Component Analysis and Graphical Networks
 
 
-First we will cluster types of shooters
+Next we will cluster types of defenders
+```{r}
+df_def <- read.csv("data/defensive_tracking.csv", stringsAsFactors = FALSE)
+df_adv<-read.csv("data/ad.csv", stringsAsFactors = FALSE)
+colnames(df_def)
+colnames(df_adv)
+```
+
 
 ```{r}
-# 1. Load Libraries
-library(dplyr)
-library(tidyr)
-library(factoextra)
-
-# 2. Load the Local CSVs
-# Make sure your working directory is set to where you saved the files
-df_adv <- read.csv("ad.csv", stringsAsFactors = FALSE)
-df_per100 <- read.csv("pos.csv", stringsAsFactors = FALSE)
-df_shoot <- read.csv("shot.csv", stringsAsFactors = FALSE)
-
-# 3. Clean Duplicates (Keep 'TOT' row for traded players)
 clean_duplicates <- function(df) {
   df %>%
     group_by(Player) %>%
@@ -26,64 +21,54 @@ clean_duplicates <- function(df) {
 }
 
 df_adv <- clean_duplicates(df_adv)
-df_per100 <- clean_duplicates(df_per100)
-df_shoot <- clean_duplicates(df_shoot)
+df_adv <- df_adv %>%
+  rename(PLAYER_NAME = Player)
+
 
 # 4. Merge the Tables Together
 # We join by Player, Pos, and Age to ensure perfectly matched rows
-merged_data <- df_adv %>%
-  inner_join(df_per100, by = c("Player", "Pos", "Age", "Team", "G")) %>%
-  inner_join(df_shoot, by = c("Player", "Pos", "Age", "Team", "G"))
+merged_data <- df_def %>%
+  inner_join(df_adv, by = c("PLAYER_NAME")) 
+```
 
-# 5. Select Your Exact Features & Filter Minutes
-# Check your CSV headers. Bball-Ref usually names columns like "X0.3" for 0-3 feet when loaded into R.
-# The names below are the standard outputs from their CSV export.
-shot_data <- merged_data %>%
-  # Filter by MP.x (Minutes Played from the advanced table) to remove tiny samples
-  filter(as.numeric(MP.x) >= 500) %>%
+
+
+
+```{r}
+# 1. Load Libraries
+library(dplyr)
+library(tidyr)
+library(factoextra)
+
+library(dplyr)
+library(factoextra) # Great package for visualizing clusters
+
+# 1. Select the most descriptive columns for clustering
+clustering_data <- df_def %>%
   select(
-    Player,
+    # VOLUME (Defensive Workload & Location)
+    D_FGA_OVERALL,   # Total shots contested
+    FGA_LT_06_6FT,   # Rim protection volume
+    FG3A_3P,         # Perimeter defense volume
     
-    # --- ROLE & VOLUME ---
-    USG. = USG.,          # Usage Percentage (Primary vs Role Player)
-    FGA_per100 = FGA,     # Total Shot Volume 
-    AST_per100 = AST,     # Playmaking / Ball Dominance
-    
-    # --- SHOT PROFILE (WHERE) ---
-    Dist = Dist. ,          # Average Shot Distance
-    X3PAr = X3PAr,        # 3-Point Attempt Rate
-    pct_FGA_0_3 = X0.3,   # % of FGA from 0-3 ft (Paint Scorers)
-    pct_FGA_3_10 = X3.10, # % of FGA from 3-10 ft
-    pct_FGA_10_16 = X10.16, #  Long Mid-Range
-    pct_FGA_3P = X3PAr,     # % of FGA from 3PT (Floor Spacers)
-    
-    # --- EFFICIENCY / SKILL  ---
-    fg_pct_0_3 = X0.3.1,   # FG% at the rim
-    fg_pct_3_10 = X3.10.1, # FG% from 3-10 ft
-    fg_pct_mid = X10.16.1, # FG% from 10-16 ft
-    fg_pct_long_mid = X16.3P.1, #FG% 16ft-3pt
-    fg_pct_3P = X3P.1,     #  3P%
-    
-    # --- SPECIALTY ZONES ---
-    pct_3PA_Corner = X.3PA,  # Corner 3s
-    pct_FGA_Dunks = X.FGA,
-
-    
-    # Shot Creation (Assisted %)
-    pct_Ast_2P = X2P.2,   # % of 2P Field Goals Assisted
-    pct_Ast_3P = X3P.2    # % of 3P Field Goals Assisted
+    # EFFICIENCY (Impact relative to expected)
+    #PCT_PLUSMINUS_OVERALL, # Overall defensive impact
+    #PLUSMINUS_6FT,         # Rim deterrence 
+    #PLUSMINUS_3P           # Perimeter deterrence
   ) %>%
-  # Convert all metric columns to numeric (in case they loaded as characters)
-  mutate(across(-Player, as.numeric)) %>%
-  #drop_na()
-  mutate(across(everything(), ~replace_na(.x, 0)))
+  # Fill any lingering NAs with 0 just to be safe
+  mutate(across(everything(), ~tidyr::replace_na(.x, 0)))
 
-# 6. Scale Data (Dropping the Player name column)
-scaled_data <- scale(shot_data[, -1])
+# 2. Scale the data (Z-Score Normalization)
+# This centers everything around 0 so the algorithm treats all stats equally
+scaled_clustering_data <- scale(clustering_data)
+
+# Let's verify the scaling worked
+head(scaled_clustering_data)
 
 # 7. Find Optimal K (Plot the elbow)
-fviz_nbclust(scaled_data, kmeans, method = "wss")+ 
-  labs(title = "Elbow Method for Shooter Archetypes")
+fviz_nbclust(scaled_clustering_data, kmeans, method = "wss")+ 
+  labs(title = "Elbow Method for Defender Archetypes")
 
 ```
 Not using a library and doing the for loop explicitly
@@ -94,11 +79,9 @@ set.seed(222)
 MAX_K <- 10 # Capped at 10 to prevent micro-clusters
 sse <- c() 
 
-# Make sure 'scaled_offense' is the matrix you are feeding into X
-X <- scaled_data
 
 for (k in 1:MAX_K) {
-  algo_k <- kmeans(X, centers=k, nstart=22, iter.max=20) 
+  algo_k <- kmeans(scaled_clustering_data, centers=k, nstart=22, iter.max=20) 
   sse <- c(sse, algo_k$tot.withinss) 
 }
 
@@ -131,41 +114,41 @@ tibble(k = 1:MAX_K, SSE_difference = sse-2*lead(sse)+lead(sse, 2)) %>%
   scale_x_continuous(breaks=seq(1, MAX_K, 1)) + 
   theme(panel.grid.minor.x = element_blank(), panel.grid.minor.y = element_blank())
 ```
-I will go with k=4 clusters
+I will go with k=5 clusters
 
 ```{r}
 # 1. Run Final K-Means with K = 5
-set.seed(222) # Keeping your seed for reproducibility [cite: 1]
-final_shooter_kmeans <- kmeans(scaled_data, centers = 5, nstart = 25)
+set.seed(222) # Keeping your seed for reproducibility
+final_defender_kmeans <- kmeans(scaled_clustering_data, centers = 5, nstart = 25)
 
 # 2. Attach the cluster labels back to your original unscaled data
-shot_data$Shooter_Cluster <- as.factor(final_shooter_kmeans$cluster)
+df_def$Defender_Cluster <- as.factor(final_defender_kmeans$cluster)
 
 # 3. Calculate the average stats for each cluster to see what they represent
-cluster_profiles <- shot_data %>%
-  group_by(Shooter_Cluster) %>%
+cluster_profiles <- df_def %>%
+  group_by(Defender_Cluster) %>%
   summarise(
     Count = n(),
-    Avg_USG = round(mean(USG.), 1),
-    Avg_AST_per100 = round(mean(AST_per100), 1),
-    Avg_Dist = round(mean(Dist), 1),
-    Avg_3PAr = round(mean(X3PAr), 2),
-    Avg_0_3ft = round(mean(pct_FGA_0_3), 3),
-    Avg_Dunks = round(mean(pct_FGA_Dunks), 3),
-    Avg_Ast_2P = round(mean(pct_Ast_2P), 3),
-    Avg_Ast_3P = round(mean(pct_Ast_3P), 3)
-    AVG_
+    # Volume: Where are they defending?
+    Avg_Total_Contests = round(mean(D_FGA_OVERALL), 1),
+    Avg_Rim_Contests = round(mean(FGA_LT_06_6FT), 1),
+    Avg_3P_Contests = round(mean(FG3A_3P), 1),
+    
+    # Efficiency: How much are they lowering the opponent's FG%? (Negative is better!)
+    Avg_Overall_Impact = round(mean(PCT_PLUSMINUS_OVERALL), 3),
+    Avg_Rim_Impact = round(mean(PLUSMINUS_6FT), 3),
+    Avg_3P_Impact = round(mean(PLUSMINUS_3P), 3)
   )
 
 # Print the profiles to the console
 print(cluster_profiles)
 
 # 4. Export the mapping for Python / PyTorch
-# We only need the Player name and their Cluster ID
-shooter_export <- shot_data %>%
-  select(Player, Shooter_Cluster)
+# We only need the Player name and their Cluster ID to merge into your shot log
+defender_export <- df_def %>%
+  select(PLAYER_NAME, Defender_Cluster)
 
-write.csv(shooter_export, "shooter_archetypes_15_16.csv", row.names = FALSE)
+write.csv(defender_export, "defender_archetypes_15_16.csv", row.names = FALSE)
 ```
 
 
@@ -202,7 +185,7 @@ km_centers_long %>%
 
 
 ```{r}
-pca <- prcomp(scaled_data) # perform Principle Component Analysis 
+pca <- prcomp(scaled_clustering_data) # perform Principle Component Analysis 
 pca_summary <- summary(pca) # summary of PCA model
 
 # plot % of variance between players explained by each subsequent PC 
@@ -215,9 +198,11 @@ tibble(imp = pca_summary$importance[2,], n = 1:length(imp)) %>% # get importance
   scale_y_continuous(labels=scales::percent) + # change y-axis from proportion to percentage
   theme(panel.grid.minor.x = element_blank(), panel.grid.minor.y = element_blank())
 ```
+
+
 ```{r}
-pc2 <- as.data.frame(pca$x[,1:2]) # extract first 3 PCs
-pc2$Cluster <- as.factor(final_shooter_kmeans$cluster) # add player clusters 
+pc2 <- as.data.frame(pca$x[,1:3]) # extract first 3 PCs
+pc2$Cluster <- as.factor(final_defender_kmeans$cluster) # add player clusters 
 cluster1_var <- round(pca_summary$importance[2,1], 4) * 100 # get variance explained by cluster 1
 cluster2_var <- round(pca_summary$importance[2,2], 4) * 100 # get variance explained by cluster 2
 
@@ -233,26 +218,32 @@ pc2 %>%
        y = paste0('PC2 (Accounts for ', cluster2_var, '% of Variance)'), # define cluster 2 % of variance
        title = 'Visualizing K-Means Cluster Differences in 2D') 
 ```
+
+
 Gaussian mixture model
 
 
 ```{r}
 # run GMM on the scaled data from above
 set.seed(222)
-mixture_model <-  Mclust(pca$x[,1:3])
+mixture_model <-  Mclust(pca$x[,1:4])
 mix_model_summary <- summary(mixture_model) # obtain model summary
 mix_model_summary
 ```
+
+
+
 ```{r}
 library(dplyr)
 library(tidyr)
 library(ggplot2)
 
 # 1. Get the MAP class labels from your PCA-trained GMM
+# 1. Get the MAP class labels from your PCA-trained GMM
 gmm_labels <- mixture_model$classification
 
 # 2. Bind those labels to your ORIGINAL scaled data (so we have basketball stats, not PCs)
-gmm_profiles <- as.data.frame(scaled_data) %>%
+gmm_profiles <- as.data.frame(scaled_clustering_data) %>%
   mutate(Cluster = paste("Cluster", gmm_labels))
 
 # 3. Calculate the true centers (means) for each feature by Cluster
@@ -270,6 +261,8 @@ ggplot(mbc_centers_long, aes(x = feature, y = z_val, color = Cluster, group = Cl
   geom_line(linewidth = 1) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "black") + # 0 is the NBA average
   theme_minimal() +
+  facet_wrap(~ Cluster, ncol = 5) +
+  coord_flip() +
   labs(title = "GMM Cluster Profiles (Z-Scores)",
        x = "Offensive Feature",
        y = "Standard Deviations from NBA Average") +
@@ -278,12 +271,24 @@ ggplot(mbc_centers_long, aes(x = feature, y = z_val, color = Cluster, group = Cl
 
 ```{r}
 # changing the .class assignment in this chunk of code allows you to explore the players with the highest probability of belonging to that cluster
-mix_model_augment <- augment(mixture_model, shot_data)
-mix_model_augment %>%
-  dplyr::select(Player, .class, .uncertainty) %>% # select columns describing the player / cluster
-  dplyr::filter(.class==1) %>% # filter to an individual cluster
-  arrange(-.uncertainty) %>% # sort by probability
-  head(5)
+library(broom)
+library(dplyr)
+
+pca_embeddings <- as.data.frame(pca$x[, 1:4])
+
+
+mix_model_preds <- as.data.frame(predict(mixture_model, pca_embeddings))
+mix_model_augment <- augment(mixture_model, df_def)
+# Extract the Top 5 purest representatives for ALL 5 clusters instantly
+top_5_per_cluster <- mix_model_augment %>%
+  dplyr::select(Player, .class, .uncertainty) %>%
+  group_by(.class) %>%
+  arrange(.uncertainty) %>%      # Ascending: Lowest uncertainty = purest fit
+  slice_head(n = 5) %>%          # Grab the top 5 from each group
+  ungroup()                      # Always ungroup when done!
+
+# Print all 25 rows to the console
+print(top_5_per_cluster, n = 25)
 ```
 
 
@@ -304,6 +309,8 @@ pc2 %>%
        title = 'Visualizing Model Based Cluster Differences in 2D') 
 ```
 
+
+
 ```{r}
 
 mma <- mix_model_augment %>%
@@ -312,102 +319,189 @@ mma <- mix_model_augment %>%
 ```
 
 
+
 ```{r}
+library(mclust)
 library(dplyr)
 library(broom)
 
-mma <- mix_model_augment %>%
-  dplyr::select(Player, .class, .uncertainty) 
-  #cbind(dplyr::select(mix_model_preds, -classification))  # get soft classification probabilities for each cluster
+# 1. Run the GMM on the first 4 Principal Components
+# CRITICAL: We add G = 5 so it outputs exactly 5 archetypes to match your offense
+set.seed(222)
+mixture_model <- Mclust(pca$x[,1:4], G = 5)
 
-# 1. Create your nodes dataframe (using tibble instead of the deprecated data_frame)
-nodes <- tibble(
-  id = mma$Player, 
-  group = mma$.class
-)
+# 2. Extract the soft labels (Probability Matrix)
+# This is an N x 5 matrix of probabilities
+gmm_probs <- as.data.frame(mixture_model$z)
 
-# 2. Extract ONLY the cluster probability columns to a matrix
-# (Adjust the select logic if your probability columns are named differently)
-prob_matrix <- mma %>% 
-  select(-Player, -.class, -.uncertainty) %>% 
-  as.matrix()
+# 3. Rename the columns so they are clean for Python
+colnames(gmm_probs) <- c("Def_Prob_Cluster_1", "Def_Prob_Cluster_2", 
+                         "Def_Prob_Cluster_3", "Def_Prob_Cluster_4", "Def_Prob_Cluster_5")
 
-# Assign player names to the rows so the distance matrix knows who is who
-rownames(prob_matrix) <- mma$Player
+# 4. Bind the actual player names back to the probabilities
+# Note: Ensure 'df_def' has a column named 'PLAYER_NAME' (or change this to match your ID column)
+gmm_export <- cbind(Player = df_def$PLAYER_NAME, gmm_probs)
 
-# 3. Calculate all pairwise Euclidean distances instantly
-dist_mat <- dist(prob_matrix, method = "euclidean")
+# 5. Let's look at the top pure archetype for each cluster to see what the model found!
+mix_model_augment <- augment(mixture_model, df_def)
 
-# 4. Convert the distance matrix into an edge list!
-# broom::tidy() automatically creates a clean 'item1', 'item2', 'distance' dataframe
-edges <- tidy(dist_mat) %>%
-  rename(from = item1, to = item2, weight = distance)
+top_5_per_cluster <- mix_model_augment %>%
+  dplyr::select(PLAYER_NAME, .class, .uncertainty) %>%
+  group_by(.class) %>%
+  arrange(.uncertainty) %>%      # Lowest uncertainty = purest fit
+  slice_head(n = 5) %>%          # Grab top 5 pure defenders per cluster
+  ungroup()
 
-# (Optional but recommended): Invert the weight for network graphing.
-# In networks, "weight" usually means connection strength (closer = higher weight).
-# Right now, a distance of 0 means they are identical. 
-edges <- edges %>%
-  mutate(similarity_weight = 1 - weight)
+print("Top Purest Defenders by Archetype:")
+print(top_5_per_cluster, n = 25)
+
+# 6. Export the final clean CSV for PyTorch/XGBoost
+write.csv(gmm_export, "gmm_soft_labels_def_15_16.csv", row.names = FALSE)
 ```
 
-
-
-
-Mnimum spanning tree
 
 ```{r}
-# Install these if you haven't already: install.packages(c("igraph", "ggraph"))
-library(igraph)
-library(ggraph)
+# Load necessary libraries
+library(dplyr)
+library(tidyr)
+library(mclust)
 
-# 1. Clean up the edges dataframe for igraph
-# igraph expects the first two columns to be 'from' and 'to'.
-# We want to use the original Euclidean distance as the 'weight' because 
-# a Minimum Spanning Tree looks for the *smallest* total weight (shortest distance = most similar).
-edges_clean <- edges %>%
-  dplyr::select(from, to, weight) %>%
-dplyr::filter(is.finite(weight))
+# 1. Feature Engineering & Transformation
+# Ensure your df_def dataframe has the advanced stats merged in before running this
+df_def_clean <- merged_data %>%
+  # Fill any NAs with 0 to prevent Mclust from breaking
+  mutate(across(everything(), ~tidyr::replace_na(.x, 0))) %>%
+  mutate(
+    # Fix the extreme right-skew of defensive volume metrics
+    Rim_Vol_Trans = sqrt(FGA_LT_06_6FT),
+    Perimeter_Vol_Trans = sqrt(FG3A_3P),
+    Total_Vol_Trans = sqrt(D_FGA_OVERALL),
+    
+    # Compress the extreme right-skew of elite shot blockers
+    BLK_PCT_Trans = sqrt(BLK.) 
+  )
 
-# 2. Convert your dataframes into an igraph network object
-full_graph <- graph_from_data_frame(d = edges_clean, vertices = nodes, directed = FALSE)
+# 2. Select the final 9 metrics (Volume + Impact + Discipline)
+clustering_data <- df_def_clean %>%
+  select(
+    # --- VOLUME ---
+    Rim_Vol_Trans, 
+    Perimeter_Vol_Trans, 
+    Total_Vol_Trans,
+    
+    # --- EFFICACY / IMPACT ---
+    PCT_PLUSMINUS_OVERALL, 
+    PLUSMINUS_6FT, 
+    PLUSMINUS_3P,
+    
+    # --- PLAYMAKING & DISCIPLINE ---
+    BLK_PCT_Trans, 
+    STL., 
+    #PF_per100  # Personal fouls per 100 possessions (or Foul Rate)
+  )
 
-# 3. Calculate the Minimum Spanning Tree! 
-# This instantly slices your 60,000+ edges down to exactly N-1 edges.
-mst_graph <- mst(full_graph)
+# 3. Scale the Data (Z-Score Normalization)
+scaled_clustering_data <- scale(clustering_data)
 
-# 4. Plot the stunning result using ggraph
-set.seed(222) # For a reproducible layout
-ggraph(mst_graph, layout = 'tree') + # 'kk' (Kamada-Kawai) is a great physics-based layout for MSTs
-  geom_edge_link(alpha = 0.3, color = "darkgray") +
-  geom_node_point(aes(color = as.factor(group)), size = 3) +
-  # Optional: Add text labels for the most extreme players on the edges of the tree
-  # geom_node_text(aes(label = name), repel = TRUE, size = 3, check_overlap = TRUE) + 
-  theme_void() +
-  labs(title = "Minimum Spanning Tree of NBA Shooter Archetypes",
-       subtitle = "Connected by shortest multi-dimensional distance",
-       color = "GMM Cluster") +
-  theme(legend.position = "bottom")
+# 4. Run the Gaussian Mixture Model
+set.seed(222)
+# Mclust will automatically find the optimal number of clusters using BIC
+mixture_model_def <- Mclust(scaled_clustering_data) 
+
+# Attach the hard labels back to your dataframe for EDA and profiling
+df_def_clean$Def_GMM_Cluster <- as.factor(mixture_model_def$classification)
+
+# 5. Calculate Average Stats per Cluster (Using raw stats for readability)
+cluster_profiles_def <- df_def_clean %>%
+  group_by(Def_GMM_Cluster) %>%
+  summarise(
+    Count = n(),
+    
+    # Volume Profile
+    Avg_Total_Contests = round(mean(D_FGA_OVERALL), 1),
+    Avg_Rim_Contests = round(mean(FGA_LT_06_6FT), 1),
+    Avg_3P_Contests = round(mean(FG3A_3P), 1),
+    
+    # Impact Profile (Negative = good defense)
+    Avg_Overall_Impact = round(mean(PCT_PLUSMINUS_OVERALL), 3),
+    Avg_Rim_Impact = round(mean(PLUSMINUS_6FT), 3),
+    Avg_3P_Impact = round(mean(PLUSMINUS_3P), 3),
+    
+    # Playmaking & Discipline Profile
+    Avg_BLK_PCT = round(mean(BLK.), 3),
+    Avg_STL_PCT = round(mean(STL.), 3),
+    #Avg_PF_per100 = round(mean(PF_per100), 1)
+  )
+
+# Print profiles to the console so you can define the archetypes for your thesis
+print("Defensive Archetype Profiles:")
+print(cluster_profiles_def)
+
+# Save human-readable profiles for your appendix
+#rite.csv(cluster_profiles_def, "gmm_defensive_profiles_15_16.csv", row.names = FALSE)
+
+
+# 6. Export the Soft Labels for XGBoost / PyTorch
+# Extract the N x K matrix of probabilities
+#gmm_probs_def <- as.data.frame(mixture_model_def$z)
+
+# Dynamically name the columns based on how many clusters Mclust found
+#colnames(gmm_probs_def) <- c("Paint_Anchors","Perimeter Guards","Def_liability","Switch_Wing")
+
+# Bind the probabilities to the Player Names
+# Ensure 'PLAYER_NAME' matches your exact ID column
+#defender_export <- cbind(Player = df_def_clean$PLAYER_NAME, gmm_probs_def)
+
+# Export the final clean CSV
+#write.csv(defender_export, "gmm_soft_labels_def_15_16.csv", row.names = FALSE)
+
+
 ```
 
 
 
 
-Lets now compare the Gaussian model with kmeans
+
 ```{r}
-shot_data$KMeans_Cluster <- as.factor(final_shooter_kmeans$cluster)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
 
-# 2. Attach your new GMM clusters from the PCA
-shot_data$GMM_Cluster <- as.factor(mixture_model$classification)
+# 1. Get the MAP class labels from your trained GMM
+gmm_labels <- mixture_model$classification
 
-# 3. Create the cross-tabulation table to compare them
-comparison_table <- table(KMeans = shot_data$KMeans_Cluster, 
-                          GMM = shot_data$GMM_Cluster)
+# 2. Bind those labels to your ORIGINAL scaled data and assign Archetype names
+gmm_profiles <- as.data.frame(scaled_data) %>%
+  mutate(Cluster = factor(gmm_labels, 
+                          levels = c(1, 2, 3, 4), 
+                          labels = c("Elite Rim Protector", 
+                                     "Point of Attack Disruptors", 
+                                     "Vulnerable Defenders", 
+                                     "Versatile Forwards")))
 
-# Print the table
-print(comparison_table)
+# 3. Calculate the true centers (means) for each feature by Cluster
+mbc_centers <- gmm_profiles %>%
+  group_by(Cluster) %>%
+  summarise(across(everything(), mean))
+
+# 4. Pivot for plotting
+mbc_centers_long <- mbc_centers %>%
+  pivot_longer(!Cluster, names_to = 'feature', values_to = 'z_val')
+
+# 5. Plot the Z-Score Profiles
+ggplot(mbc_centers_long, aes(x = feature, y = z_val, color = Cluster, group = Cluster)) +
+  geom_point(size = 3) +
+  geom_line(linewidth = 1) +
+  facet_wrap(~ Cluster, ncol = 4) + # Updated to 4 columns
+  coord_flip() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black") + # 0 is the NBA average
+  theme_minimal() +
+  labs(title = "Defensive Archetype Profiles (Z-Scores)",
+       x = "Defensive Feature",
+       y = "Standard Deviations from NBA Average") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none") # Hides redundant legend
 ```
-
-
 
 
 

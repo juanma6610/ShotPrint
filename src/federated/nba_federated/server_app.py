@@ -1,0 +1,249 @@
+"""
+server_app.py — Flower ServerApp for federated NBA shot prediction.
+
+Supports two server-side aggregation strategies, switchable via the
+`aggregation` config key in pyproject.toml ([tool.flwr.app.config]):
+
+  "bagging"  — FedXgbBagging. All clients train each round; the server
+               concatenates each client's new tree(s) into the global ensemble.
+               PRIMARY EXPERIMENT.
+
+  "cyclic"   — FedXgbCyclic. One client trains per round in round-robin;
+               its full updated booster becomes the next round's global model.
+               ABLATION — no within-round tree conflicts, so it serves as a
+               drift-free reference point against bagging on Non-IID data.
+
+The two modes write to DIFFERENT output files so you can keep both runs
+side-by-side for thesis comparison (in <project>/results/federated/):
+   federated_<mode>_metrics.csv
+   xgb_federated_<mode>_model.json        (latest round)
+   xgb_federated_<mode>_model_best.json   (peak AUC round)
+"""
+
+from logging import INFO, WARNING
+from pathlib import Path
+
+import numpy as np
+import xgboost as xgb
+from flwr.common import Context, Parameters
+from flwr.common.logger import log
+from flwr.server import ServerApp, ServerConfig, ServerAppComponents
+from flwr.server.strategy import FedXgbBagging, FedXgbCyclic
+
+
+# ──────────────────────────────────────────────────────────────
+# Strategy adapter: give FedXgbCyclic the same centralised-eval API
+# that FedXgbBagging exposes (`evaluate_function` on raw Parameters)
+# ──────────────────────────────────────────────────────────────
+
+class FedXgbCyclicWithCentralEval(FedXgbCyclic):
+    """
+    FedXgbCyclic that supports a centralised evaluation function operating
+    directly on Flower `Parameters` (XGBoost JSON bytes), matching the API
+    used by FedXgbBagging.
+
+    Why this exists: FedXgbCyclic inherits from FedAvg, whose `evaluate_fn`
+    is invoked AFTER `parameters_to_ndarrays(parameters)` — which assumes the
+    tensors are numpy-serialised arrays. Our XGBoost models are stored as raw
+    JSON bytes, so the default FedAvg path would crash. Overriding `evaluate`
+    here bypasses the ndarrays conversion and passes the raw Parameters to
+    the user-provided eval fn, exactly the way FedXgbBagging does.
+    """
+
+    def __init__(self, *args, evaluate_function=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._evaluate_function = evaluate_function
+
+    def evaluate(self, server_round, parameters):
+        if self._evaluate_function is None:
+            return None
+        result = self._evaluate_function(server_round, parameters, {})
+        if result is None:
+            return None
+        loss, metrics = result
+        return loss, metrics
+from sklearn.metrics import roc_auc_score, accuracy_score, brier_score_loss
+
+from nba_federated.task import load_global_test_set, get_global_make_rate
+
+# ──────────────────────────────────────────────────────────────
+# Output paths
+# ──────────────────────────────────────────────────────────────
+OUTPUT_DIR = Path(__file__).resolve().parents[3] / "results" / "federated"
+if not OUTPUT_DIR.exists():
+    OUTPUT_DIR = Path('/mnt/c/Users/juanm/Documents/KUL_MAI/TFM/TFM-KUL-Juan/results/federated')
+
+
+def _paths_for(mode: str):
+    """Return (latest_model, best_model, metrics_csv) paths for the given mode."""
+    return (
+        OUTPUT_DIR / f"xgb_federated_{mode}_model.json",
+        OUTPUT_DIR / f"xgb_federated_{mode}_model_best.json",
+        OUTPUT_DIR / f"federated_{mode}_metrics.csv",
+    )
+
+
+# ──────────────────────────────────────────────────────────────
+# Per-round config sent to every client
+# ──────────────────────────────────────────────────────────────
+
+def make_on_fit_config_fn(run_config: dict, base_score: float, aggregation: str):
+    """
+    Build the dict of params shipped with FitIns to every client each round.
+    Without this, clients would silently fall back to their hardcoded defaults.
+    """
+    defaults = {
+        "params.objective":         "binary:logistic",
+        "params.eval_metric":       "logloss",
+        "params.tree_method":       "hist",
+        "params.max_depth":         4,
+        "params.eta":               0.01,
+        "params.subsample":         0.8,
+        "params.colsample_bytree":  0.8,
+        "params.min_child_weight":  10,
+        "params.reg_lambda":        2.0,
+        "params.base_score":        base_score,
+        "local-epochs":             1,
+        "aggregation":              aggregation,
+        "seed":                     42,
+    }
+    cfg = {**defaults}
+    for k, v in run_config.items():
+        if k in defaults:
+            cfg[k] = v
+    # The aggregation flag is decided server-side; never let run_config override
+    # it for clients (would create a mismatch with the strategy actually used).
+    cfg["aggregation"] = aggregation
+
+    def on_fit_config(server_round: int) -> dict:
+        return {**cfg, "server-round": server_round}
+
+    return on_fit_config
+
+
+# ──────────────────────────────────────────────────────────────
+# Global evaluation function (called by server after each round)
+# ──────────────────────────────────────────────────────────────
+
+def make_evaluate_fn(data_path: str | None, mode: str):
+    """
+    Returns a centralised evaluation function the strategy calls after each
+    aggregation round. Writes mode-specific files so bagging vs cyclic runs
+    don't overwrite each other.
+    """
+    latest_path, best_path, metrics_csv = _paths_for(mode)
+    test_dmatrix, y_test = load_global_test_set(data_path=data_path)
+    metrics_log = []
+    best = {"auc": -1.0, "round": -1}
+
+    def evaluate_fn(server_round: int, parameters: Parameters, config: dict):
+        if not parameters.tensors or parameters.tensors[0] == b"":
+            log(WARNING, f"[Server/{mode}] Round {server_round}: empty params, skipping eval.")
+            return 0.0, {}
+
+        booster = xgb.Booster()
+        booster.load_model(bytearray(parameters.tensors[0]))
+
+        y_probs = booster.predict(test_dmatrix)
+        y_preds = (y_probs > 0.5).astype(int)
+
+        auc      = float(roc_auc_score(y_test, y_probs))
+        accuracy = float(accuracy_score(y_test, y_preds))
+        brier    = float(brier_score_loss(y_test, y_probs))
+        n_trees  = booster.num_boosted_rounds()
+        loss = float(-np.mean(
+            y_test * np.log(y_probs + 1e-7) +
+            (1 - y_test) * np.log(1 - y_probs + 1e-7)
+        ))
+
+        log(INFO,
+            f"[Server/{mode}] Round {server_round:>3d} | "
+            f"Trees={n_trees:>5d} | AUC={auc:.4f} | "
+            f"Acc={accuracy:.4f} | Brier={brier:.4f}")
+
+        metrics_log.append({
+            "round":    server_round,
+            "n_trees":  n_trees,
+            "auc":      auc,
+            "accuracy": accuracy,
+            "brier":    brier,
+            "logloss":  loss,
+        })
+
+        booster.save_model(str(latest_path))
+
+        # Track and persist the best-AUC checkpoint separately. FedXgbBagging
+        # on Non-IID data drifts past its peak; FedXgbCyclic is more stable
+        # but still benefits from saving the best round.
+        if auc > best["auc"]:
+            best["auc"], best["round"] = auc, server_round
+            booster.save_model(str(best_path))
+            log(INFO, f"[Server/{mode}] New best model @ round {server_round} (AUC={auc:.4f})")
+
+        import pandas as pd
+        pd.DataFrame(metrics_log).to_csv(str(metrics_csv), index=False)
+
+        return loss, {"auc": auc, "accuracy": accuracy, "brier": brier}
+
+    return evaluate_fn
+
+
+# ──────────────────────────────────────────────────────────────
+# ServerApp factory
+# ──────────────────────────────────────────────────────────────
+
+def server_fn(context: Context) -> ServerAppComponents:
+    """Configure and return the Flower server components."""
+    num_rounds  = int(context.run_config.get("num-server-rounds", 50))
+    num_clients = int(context.run_config.get("num-clients", 30))
+    data_path   = context.run_config.get("data-path", None)
+    aggregation = str(context.run_config.get("aggregation", "bagging")).lower()
+
+    if aggregation not in {"bagging", "cyclic"}:
+        log(WARNING, f"[Server] Unknown aggregation '{aggregation}', falling back to 'bagging'.")
+        aggregation = "bagging"
+
+    base_score = get_global_make_rate(data_path)
+
+    log(INFO, f"[Server] Starting federated XGBoost training")
+    log(INFO, f"[Server] Mode={aggregation} | Rounds={num_rounds} | "
+              f"Clients={num_clients} | base_score={base_score:.4f}")
+
+    on_fit_config_fn = make_on_fit_config_fn(context.run_config, base_score, aggregation)
+    evaluate_fn      = make_evaluate_fn(data_path, aggregation)
+
+    if aggregation == "cyclic":
+        # FedXgbCyclic selects 1 client per round in round-robin order. The
+        # selected client's full booster becomes the next round's global model.
+        # We use a thin subclass that lets us pass an XGBoost-aware central
+        # evaluator (the stock FedXgbCyclic inherits FedAvg's `evaluate_fn`,
+        # which incorrectly tries to convert our JSON-bytes Parameters to
+        # numpy ndarrays). See FedXgbCyclicWithCentralEval above.
+        strategy = FedXgbCyclicWithCentralEval(
+            fraction_fit=1.0,
+            fraction_evaluate=0.0,
+            min_fit_clients=1,
+            min_evaluate_clients=0,
+            min_available_clients=num_clients,
+            on_fit_config_fn=on_fit_config_fn,
+            evaluate_function=evaluate_fn,
+        )
+    else:
+        # FedXgbBagging: every client trains every round; their new trees are
+        # concatenated into the global ensemble.
+        strategy = FedXgbBagging(
+            fraction_fit=1.0,
+            fraction_evaluate=0.0,
+            min_fit_clients=num_clients,
+            min_evaluate_clients=0,
+            min_available_clients=num_clients,
+            on_fit_config_fn=on_fit_config_fn,
+            evaluate_function=evaluate_fn,
+        )
+
+    config = ServerConfig(num_rounds=num_rounds)
+    return ServerAppComponents(strategy=strategy, config=config)
+
+
+# Flower ServerApp entry point
+app = ServerApp(server_fn=server_fn)

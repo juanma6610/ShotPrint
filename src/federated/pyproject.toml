@@ -1,0 +1,53 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nba-federated"
+version = "1.0.0"
+description = "Federated XGBoost for NBA Shot Prediction"
+dependencies = [
+    "flwr[simulation]>=1.8.0",
+    "scikit-learn",
+    "xgboost",
+    "pandas",
+    "numpy"
+]
+
+[tool.flwr.app]
+publisher = "flwr"
+
+[tool.flwr.app.components]
+serverapp = "nba_federated.server_app:app"
+clientapp = "nba_federated.client_app:app"
+
+[tool.flwr.app.config]
+# ─── Federation setup ──────────────────────────────────────────
+num-server-rounds = 50
+num-clients = 30
+strategy = "iid"            # data partitioning: "team" (Non-IID, primary) or "iid" (control)
+local-epochs = 1             # trees added per client per round
+aggregation = "bagging"      # server-side aggregation: "bagging" or "cyclic"
+                             # For the cyclic ablation, set this to "cyclic" and
+                             # raise num-server-rounds to ~300 (1 tree per round).
+seed = 42                    # master training seed. Controls IID partitioning,
+                             # local train/eval split, and XGBoost subsample RNG.
+                             # The global test holdout is NOT controlled by this —
+                             # it always uses RANDOM_STATE in task.py so multi-seed
+                             # runs land on the SAME test set.
+
+# ─── XGBoost training params ───────────────────────────────────
+# Propagated to every client by server_app.make_on_fit_config_fn.
+# NOTE: NO scale_pos_weight — the centralized baseline omits it on purpose
+# so the model produces calibrated probabilities for the POE/EPV pipeline.
+# Defaults are tuned for the bagging+non-IID regime: small eta + strong
+# regularization keep the post-peak drift gentle.
+"params.objective"        = "binary:logistic"
+"params.eval_metric"      = "logloss"
+"params.tree_method"      = "hist"
+"params.max_depth"        = 4    # was 5 — simpler trees flatten Non-IID drift
+"params.eta"              = 0.01 # was 0.02 — slower learning per tree
+"params.subsample"        = 0.8
+"params.colsample_bytree" = 0.8
+"params.min_child_weight" = 10   # was 5 — fewer tiny-leaf overfits
+"params.reg_lambda"       = 2.0  # L2 regularization on leaf values

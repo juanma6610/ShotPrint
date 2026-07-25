@@ -28,14 +28,14 @@ headers <- c(
 # Note: I set this to "2018-19" based on your earlier graph code, but change it if needed!
 params <- list(
   College = "", Conference = "", Country = "", 
-  DefenseCategory = "Greater Than 15Ft", # "Overall" gives DFG%. Can also be "3-Pointers" or "Less Than 6 Ft"
+  DefenseCategory = "3-Pointers", # "Overall" gives DFG%. Can also be "3-Pointers" or "Less Than 6 Ft"
   DraftPick = "", DraftYear = "", Height = "", 
   LastNGames = "0", LeagueID = "00", Location = "", 
   Month = "0", OpponentTeamID = "0", Outcome = "", 
   PORound = "0", 
   PerMode = "PerGame", # Or use "Totals" / "Per100Possessions"
   PlayerPosition = "", 
-  Season = "2015-16",  # <-- CHANGE THIS TO MATCH YOUR OFFENSIVE DATA
+  Season = "2014-15",  # <-- CHANGE THIS TO MATCH YOUR OFFENSIVE DATA
   SeasonSegment = "", SeasonType = "Regular Season", 
   TeamID = "0", Weight = ""
 )
@@ -60,6 +60,159 @@ fifte_nba_tracking_defense <- fifte_nba_tracking_defense %>%
 # Check out your new data!
 head(fifte_nba_tracking_defense)
 ```
+
+
+```{r}
+library(httr)
+library(jsonlite)
+library(dplyr)
+library(purrr)
+
+url <- "https://stats.nba.com/stats/leaguedashptdefend"
+
+categories <- c("Overall", "3-Pointers", "Less Than 6Ft", "Less Than 15Ft", "2-Pointers")
+suffixes <- c("_OVERALL", "_3P", "_LT_06", "_LT_15", "_2P")
+
+# 1. The Upgraded "Human" Headers
+headers <- c(
+  `Host` = 'stats.nba.com',
+  `Connection` = 'keep-alive',
+  `Accept` = 'application/json, text/plain, */*',
+  `User-Agent` = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  `Referer` = 'https://www.nba.com/',
+  `Origin` = 'https://www.nba.com',
+  `Accept-Language` = 'en-US,en;q=0.9',
+  `Accept-Encoding` = 'gzip, deflate, br'
+)
+
+base_params <- list(
+  College = "", Conference = "", Country = "", DraftPick = "", DraftYear = "", Height = "", 
+  LastNGames = "0", LeagueID = "00", Location = "", Month = "0", OpponentTeamID = "0", Outcome = "", 
+  PORound = "0", PerMode = "PerGame", PlayerPosition = "", Season = "2015-16", 
+  SeasonSegment = "", SeasonType = "Regular Season", TeamID = "0", Weight = ""
+)
+
+df_list <- list()
+
+# 2. The Fortified Loop
+for (i in 1:length(categories)) {
+  
+  cat("Fetching:", categories[i], "data...\n")
+  
+  current_params <- base_params
+  current_params$DefenseCategory <- categories[i]
+  
+  # The tryCatch prevents R from freezing if the server hangs
+  response <- tryCatch({
+    GET(url, add_headers(.headers=headers), query = current_params, config(timeout(15)))
+  }, error = function(e) {
+    message("Timeout or Error on ", categories[i], ": ", e$message)
+    return(NULL) # Returns NULL so the loop doesn't crash
+  })
+  
+  # Only process if we got a valid response
+  if (!is.null(response) && status_code(response) == 200) {
+    json_data <- fromJSON(content(response, "text", encoding = "UTF-8"))
+    
+    col_names <- json_data$resultSets$headers[[1]]
+    data_rows <- json_data$resultSets$rowSet[[1]]
+    
+    temp_df <- as.data.frame(data_rows, stringsAsFactors = FALSE)
+    colnames(temp_df) <- col_names
+    
+    temp_df <- temp_df %>% mutate(across(c(4:ncol(.)), as.numeric))
+    
+    # Append the Suffix
+    stat_cols <- 6:ncol(temp_df) 
+    colnames(temp_df)[stat_cols] <- paste0(colnames(temp_df)[stat_cols], suffixes[i])
+    
+    # Drop redundant columns after the first pass
+    if (i > 1) {
+      temp_df <- temp_df %>%
+        select(-PLAYER_NAME, -TEAM_ID, -TEAM_ABBREVIATION, -AGE, -GP, -G, -W, -L, -MIN)
+    }
+    
+    df_list[[i]] <- temp_df
+    cat("  -> Success!\n")
+    
+  } else {
+    cat("  -> FAILED to fetch", categories[i], "\n")
+  }
+  
+  # Be gentle on the API
+  Sys.sleep(3)
+}
+
+# 3. Merge into the master dataframe
+# We use compact() to drop any NULL lists in case one of the API calls failed
+df_def_master <- reduce(purrr::compact(df_list), full_join, by = "CLOSE_DEF_PERSON_ID")
+
+cat("\nDone! Master Defensive tracking dataset created.\n")
+```
+
+
+
+
+
+
+```{r}
+library(httr)
+library(jsonlite)
+
+# 1. Upgraded "Human" Headers
+headers <- c(
+  `Host` = 'stats.nba.com',
+  `Connection` = 'keep-alive',
+  `Accept` = 'application/json, text/plain, */*',
+  `User-Agent` = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  `Referer` = 'https://www.nba.com/',
+  `Origin` = 'https://www.nba.com',
+  `Accept-Language` = 'en-US,en;q=0.9',
+  `Accept-Encoding` = 'gzip, deflate, br'
+)
+
+# 2. Test Parameters (Just asking for 1 thing)
+params <- list(
+  College = "", Conference = "", Country = "", DraftPick = "", DraftYear = "", Height = "", 
+  LastNGames = "0", LeagueID = "00", Location = "", Month = "0", OpponentTeamID = "0", Outcome = "", 
+  PORound = "0", PerMode = "PerGame", PlayerPosition = "", Season = "2015-16", 
+  SeasonSegment = "", SeasonType = "Regular Season", TeamID = "0", Weight = "",
+  DefenseCategory = "Overall" # Testing just one category
+)
+
+url <- "https://stats.nba.com/stats/leaguedashptdefend"
+
+cat("Sending request to NBA API...\n")
+
+# 3. The Fortified GET Request
+# We added config(timeout(10)) so R gives up after 10 seconds instead of freezing
+response <- tryCatch({
+  GET(url, add_headers(.headers=headers), query = params, config(timeout(10)))
+}, error = function(e) {
+  return(paste("Request Failed or Timed Out:", e$message))
+})
+
+# 4. Diagnostics: What did the server say?
+if (inherits(response, "response")) {
+  cat("HTTP Status Code:", status_code(response), "\n")
+  
+  if (status_code(response) == 200) {
+    cat("Success! The API let you in.\n")
+    # You can unpack it here if you want
+  } else if (status_code(response) == 403) {
+    cat("Error 403: The NBA blocked your request. Headers might need tweaking or your IP is temporarily timed out.\n")
+  } else if (status_code(response) == 400) {
+    cat("Error 400: Bad Request. One of our parameters (like Season or DefenseCategory) is formatted wrong.\n")
+  }
+} else {
+  cat(response, "\n")
+}
+```
+
+
+
+
+
 
 
 https://www.nba.com/stats/players/opponent-shooting?Season=2015-16&DistanceRange=By+Zone
@@ -221,8 +374,8 @@ def_data_list_clean <- purrr::map2(def_data_list, suffixes, function(df, suffix)
     # First, drop the junk columns
     select(
       -contains("TEAM"),
-      -starts_with("GP"),
-      -starts_with("G"),
+      #-starts_with("GP"),
+      #-starts_with("G"),
       -starts_with("FREQ"),
       -starts_with("AGE"),
       -starts_with("CLOSE_DEF_PERSON_ID"),
@@ -236,7 +389,11 @@ def_data_list_clean <- purrr::map2(def_data_list, suffixes, function(df, suffix)
 clean_defensive_tracking <- purrr::reduce(def_data_list_clean, full_join, by = "PLAYER_NAME") %>%
   # Convert everything to numbers and fill NAs with 0
   mutate(across(-PLAYER_NAME, as.numeric)) %>%
-  mutate(across(everything(), ~replace_na(.x, 0)))
+  mutate(across(everything(), ~replace_na(.x, 0))) %>%
+  filter(GP_OVERALL >= 20) %>%
+  # NOW we can safely drop all the GP columns so they don't mess up K-Means
+  select(-starts_with("G")) %>%
+  select(-starts_with("GP"))
 
 # Behold your final, beautifully labeled defensive matrix!
 View(clean_defensive_tracking)

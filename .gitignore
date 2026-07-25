@@ -3,6 +3,11 @@ data/
 temp/
 .vscode/
 
+# Results folders
+results/
+figure_results/
+figures_thesis/
+
 renv/
 .Rprofile
 .Rhistory
