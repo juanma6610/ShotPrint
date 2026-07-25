@@ -251,28 +251,32 @@ def plot_probability_distribution(y_test, probs, out_path):
 
 def draw_half_court(ax, color='black', lw=1.2):
     """
-    Draws a simplified NBA half-court (47 x 50 ft) on the given axes.
-    Court spans x ∈ [47, 94] (offensive half), y ∈ [0, 50]; basket at (88.75, 25).
+    Draws a to-scale NBA offensive half-court (47 x 50 ft) on the given axes.
+    Frame: x in [47, 94] (baseline at x=94), y in [0, 50]; hoop centre at (88.75, 25).
+    All dimensions in feet: lane 16 x 19, FT line 19 ft off the baseline, hoop
+    5.25 ft off the baseline, backboard 4 ft off the baseline, 3-pt line 23.75 ft
+    (22 ft in the corners).
     """
-    # Outer
+    # Half-court boundary
     ax.add_patch(patches.Rectangle((47, 0), 47, 50, fill=False, edgecolor=color, lw=lw))
-    # Half-court line
-    ax.plot([47, 47], [0, 50], color=color, lw=lw)
-    # Paint
-    ax.add_patch(patches.Rectangle((69, 17), 19, 16, fill=False, edgecolor=color, lw=lw))
-    # Restricted area (4ft arc)
-    ax.add_patch(patches.Arc((88.75, 25), 8, 8, theta1=90, theta2=270, color=color, lw=lw))
-    # Free-throw circle
-    ax.add_patch(patches.Arc((69, 25), 12, 12, theta1=270, theta2=90, color=color, lw=lw))
-    # Backboard + hoop
-    ax.plot([87.75, 87.75], [22, 28], color=color, lw=lw)
+    # Paint / lane: 16 ft wide x 19 ft long, anchored on the baseline up to the FT line (x=75)
+    ax.add_patch(patches.Rectangle((75, 17), 19, 16, fill=False, edgecolor=color, lw=lw))
+    # Free-throw circle (r=6) centred on the FT line (75, 25): solid toward mid-court, dashed toward basket
+    ax.add_patch(patches.Arc((75, 25), 12, 12, theta1=90, theta2=270, color=color, lw=lw))
+    ax.add_patch(patches.Arc((75, 25), 12, 12, theta1=270, theta2=90, color=color, lw=lw, linestyle='--'))
+    # Backboard (6 ft wide, 4 ft off the baseline -> x=90) and rim (r=0.75 around 88.75)
+    ax.plot([90, 90], [22, 28], color=color, lw=lw)
     ax.add_patch(patches.Circle((88.75, 25), radius=0.75, fill=False, edgecolor=color, lw=lw))
-    # 3-point line: corners at y=3 and y=47, arc radius 23.75 around hoop
-    ax.plot([94, 88.75 - np.sqrt(23.75**2 - 22**2)], [3, 3], color=color, lw=lw)
-    ax.plot([94, 88.75 - np.sqrt(23.75**2 - 22**2)], [47, 47], color=color, lw=lw)
-    arc_theta = np.degrees(np.arccos(22 / 23.75))  # angle where arc meets corner line
-    ax.add_patch(patches.Arc((88.75, 25), 23.75 * 2, 23.75 * 2,
-                             theta1=180 - arc_theta, theta2=180 + arc_theta,
+    # Restricted-area arc (r=4) around the hoop, opening toward mid-court
+    ax.add_patch(patches.Arc((88.75, 25), 8, 8, theta1=90, theta2=270, color=color, lw=lw))
+    # 3-point line: corner lines 3 ft from each sideline (y=3, y=47) + arc r=23.75 around the hoop
+    r = 23.75
+    x_corner = 88.75 - np.sqrt(r ** 2 - 22.0 ** 2)   # where the arc meets the corner lines
+    ax.plot([94, x_corner], [3, 3], color=color, lw=lw)
+    ax.plot([94, x_corner], [47, 47], color=color, lw=lw)
+    span = np.degrees(np.arcsin(22.0 / r))           # ~67.9 deg half-width of the arc about 180 deg
+    ax.add_patch(patches.Arc((88.75, 25), 2 * r, 2 * r,
+                             theta1=180 - span, theta2=180 + span,
                              color=color, lw=lw))
     ax.set_xlim(47, 94)
     ax.set_ylim(0, 50)
