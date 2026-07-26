@@ -35,28 +35,28 @@ The calibrated probability powers a suite of analytics: a **Points Over Expectat
 
 ## The problem
 
-Some of the most valuable data in sports — practice tracking, biometrics, scheme indicators — is exactly the data teams most want to keep private. That creates a tension: build cutting-edge models, *or* respect data governance. This project resolves it by pairing a **deliberately portable shot-quality model** with a **cross-silo federated protocol**, so a league-scale model can be trained **without any franchise surrendering its raw data**.
+Some of the most valuable data in sports: practice tracking, biometrics, scheme indicators, is exactly the data teams most want to keep private. That creates a tension: build cutting edge models, *or* respect data governance. This project resolves it by pairing a **deliberately portable shot quality model** with a **cross-silo federated protocol**, so a league scale model can be trained **without any franchise surrendering its raw data**.
 
 ## How it works
 
 <p align="center"><img src="assets/pipeline_architecture.png" width="85%" alt="End-to-end pipeline architecture"></p>
 
-Every shot is reduced to **what was true at the moment of release**. The hardest part is recovering that release frame from the tracking stream — the play-by-play timestamp trails the true release by 1–2 seconds — so I detect the ball's arc apex and walk back to the frame where it leaves the shooter's hands.
+Every shot is reduced to **the exact game state at the moment of release**. The hardest part is recovering that release frame from the tracking stream, the PBP timestamp trails the true release by 1–2 seconds, so I detect the ball's arc apex and walk back to the frame where it leaves the shooter's hands.
 
 <table>
 <tr>
 <td width="50%"><img src="assets/release_frame_recovery.png" alt="Release-frame recovery"></td>
-<td width="50%"><img src="assets/kinematics_decomposition.png" alt="Kinematic decomposition"></td>
+<td width="50%"><img src="assets/shot_geometry_features.png" alt="Kinematic decomposition"></td>
 </tr>
 <tr>
-<td align="center"><sub><b>Release-frame recovery</b> from the ball's vertical trajectory.</sub></td>
+<td align="center"><sub><b>Release frame recovery</b> from the ball's vertical trajectory.</sub></td>
 <td align="center"><sub><b>Kinematics</b> decomposed parallel/perpendicular to the shot line.</sub></td>
 </tr>
 </table>
 
 The feature set spans six portable families: **shot geometry**, **defender pressure** (distance, angle, closeout time, tight-contest counts), **shooter & defender kinematics**, **release mechanics** (height, speed, angle), **possession tempo** (shot clock, touch time, catch-and-shoot), **floor spacing**, and **soft player archetypes** from a GMM.
 
-Spacing and pressure are dynamic — a kinematic **space-control** model turns positions and velocities into who would reach each patch of floor first, revealing how a possession opens (and closes) the shooter's window:
+Spacing and pressure are dynamic, a kinematic **space control** model turns positions and velocities into who would reach each patch of floor first, revealing how a possession opens (and closes) the shooter's window:
 
 <p align="center">
   <img src="assets/possession_spacing.gif" width="80%" alt="Animated space-control (time-to-control) heatmap for Curry's catch-and-shoot 3">
@@ -65,7 +65,7 @@ Spacing and pressure are dynamic — a kinematic **space-control** model turns p
 
 ## Results
 
-A gradient-boosted model trained with **game-disjoint** splits — no game ever spans train and test — and evaluated on **probability quality**, not threshold accuracy (because everything downstream integrates the probability, not the label).
+A gradient-boosted model trained with **game-disjoint** splits, no game ever spans train and test and evaluated on **probability quality**, not threshold accuracy (because everything downstream integrates the probability, not the label).
 
 | Model | Brier ↓ | Log-loss ↓ | ROC-AUC ↑ |
 |---|---|---|---|
@@ -92,7 +92,7 @@ Training across the 30 teams as natural silos (non-IID by construction), the fed
 
 ## Applications — what the calibrated probability unlocks
 
-With a trustworthy P(make), a shot's value over an average shooter in the same situation is simply `POE = value × (outcome − P(make))`, computed **out-of-fold** so no player is flattered by the model training on their own shots.
+With a trustworthy P(make), a shot's value over an average shooter in the same situation is simply `POE = value × (outcome − P(make))`, computed **out of fold** so no player is flattered by the model training on their own shots.
 
 <table>
 <tr>
@@ -131,15 +131,11 @@ docs/                Rerun runbook + dataset documentation
 assets/              Figures used in this README
 ```
 
-## Reproduce it
-
-The full pipeline (features → model → POE → federated → figures) is scripted end to end. See **[`docs/RERUN.md`](docs/RERUN.md)** for the exact command sequence. Feature extraction pulls the public 2015-16 SportVU logs, extracts ~98k shots across 631 games, and writes a training-ready table.
 
 ## Dataset
 
 The engineered shot-features table (≈98k shots × 48 columns) is published as a standalone dataset. The full column dictionary and module-level details live in **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)**.
-<!-- Add your Kaggle dataset link here once published. -->
-<!-- 📊 Kaggle: https://www.kaggle.com/datasets/... -->
+📊 Kaggle: https://www.kaggle.com/datasets/juanmaoliver/shot-features/data
 
 
 ## About
@@ -147,10 +143,8 @@ The engineered shot-features table (≈98k shots × 48 columns) is published as 
 **Juan Manuel Oliver** — MSc Artificial Intelligence (Big Data Analytics), KU Leuven.
 Thesis: *Reading the Floor — A Portable Federated Shot Quality Model from Optical Tracking.*
 
-<!-- Fill these in before publishing:
-- 🔗 LinkedIn: https://www.linkedin.com/in/...
-- 📄 Thesis PDF: link
-- 📊 Kaggle dataset: link
--->
+- 🔗 LinkedIn: https://www.linkedin.com/in/juanma-oliver
+- 📄 Thesis PDF: 
+- 📊 Kaggle: [JuanmaOliver](https://www.kaggle.com/juanmaoliver)
 
 <sub>Built on publicly posted SportVU tracking and NBA play-by-play data, for research and educational use. Please credit the original data sources.</sub>
