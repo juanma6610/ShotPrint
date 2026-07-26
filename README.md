@@ -58,7 +58,7 @@ The feature set spans six portable families: **shot geometry**, **defender press
 
 <p align="center">
   <img src="assets/touch_time_sidebyside.gif" width="92%" alt="Touch-time recovery synced with broadcast footage of Harden's pull-up 3">
-  <br><sub><b>Touch-time recovery, synced to the broadcast.</b> Touch time is how long the shooter holds the ball before shooting — here 5.24 s of Harden dribbling into a pull-up 3, catch to release, aligned in real time (GSW @ HOU).</sub>
+  <br><sub><b>Touch time recovery, synced to the broadcast.</b> Touch time is how long the shooter holds the ball before shooting — here 5.24 s of Harden dribbling into a pull-up 3, catch to release, aligned in real time (GSW @ HOU).</sub>
 </p>
 
 Spacing and pressure are dynamic, a kinematic **space control** model turns positions and velocities into who would reach each patch of floor first, revealing how a possession opens (and closes) the shooter's window:
