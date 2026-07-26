@@ -2,7 +2,7 @@
 <p align="center"><b>A portable, calibrated, <i>federated</i> shot-quality model for the NBA — built from raw optical player-tracking.</b></p>
 
 <p align="center">
-  <img src="assets/hero_possession.gif" width="88%" alt="SportVU tracking possession animation (GSW @ HOU)">
+  <img src="assets/hero_possession.gif" width="88%" alt="SportVU tracking render — Curry catch-and-shoot 3, GSW @ CLE">
 </p>
 
 <p align="center">
@@ -16,19 +16,19 @@
 
 ---
 
-## TL;DR
+## Summary
 
-I turned **~98,000 NBA shots** of raw optical tracking into a **calibrated probability that any shot goes in** — using only information available *before the ball is released* — and then showed that model can be **trained across all 30 teams without any team sharing its raw data** (federated learning), at a cost of just **~2.6%**.
+Converted raw optical tracking and Play by Play logs into a **calibrated model** that outputs the probability of converting the shot, using only information available *before the ball is released* and then showed that model can be **trained across all 30 teams without any team sharing its raw data** (federated learning), at a cost of just **~2.6%**.
 
-The calibrated probability powers a suite of analytics: a **Points Over Expectation (POE)** rating for shooters and defenders, per-zone and archetype-matchup breakdowns, and five-man **lineup** evaluation.
+The calibrated probability powers a suite of analytics: a **Points Over Expectation (POE)** rating for shooters and defenders, per zone and archetype matchup breakdowns, and five man **lineup** evaluation.
 
-> MSc Artificial Intelligence thesis (Big Data Analytics), KU Leuven — *Juan Manuel Oliver*.
+> Advanced MSc Artificial Intelligence thesis (Big Data Analytics), KU Leuven — *Juan Manuel Oliver*.
 
 **Highlights**
-- 🎯 **Well-calibrated** shot model: Brier **0.219**, log-loss **0.628**, ROC-AUC **0.670** on a *game-disjoint* test set — clearing the ~0.62 AUC ceiling of purely geometric models.
-- 🔒 **Federated across 30 teams** (Flower + `FedXgbBagging`/`FedXgbCyclic`), measured over 5 seeds and 4 configurations, with paired-bootstrap confidence intervals.
-- 🧠 **Portable feature set** — release geometry, defender pressure, shooter/defender kinematics, spacing, tempo, and behavioural **archetypes** from a Gaussian Mixture Model — no dependency on NBA-specific player IDs.
-- 📊 **Applications**: POE leaderboards (shooters & defenders), per-zone calibration, archetype matchup heatmaps, lineup POE, and spatial shot charts.
+- 🎯 **Well-calibrated** shot model: Brier **0.219**, log-loss **0.628**, ROC-AUC **0.670** on a *game-disjoint* test set, clearing the ~0.62 AUC ceiling of purely geometric models.
+- 🔒 **Federated across 30 teams** (Flower + `FedXgbBagging`/`FedXgbCyclic`), measured over 5 seeds and 4 configurations, with paired bootstrap confidence intervals.
+- 🧠 **Portable feature set** — release geometry, defender pressure, shooter/defender kinematics, spacing, tempo, and behavioural **archetypes** from a Gaussian Mixture Model, no dependency on NBA specific player IDs.
+- 📊 **Applications**: POE leaderboards (shooters & defenders), per zone calibration, archetype matchup heatmaps, lineup POE, and spatial shot charts, ability to train model while keeping data private.
 - 🧪 End-to-end, reproducible pipeline from raw `.7z` tracking archives → features → model → federated experiments → thesis figures.
 
 ---
@@ -55,6 +55,13 @@ Every shot is reduced to **what was true at the moment of release**. The hardest
 </table>
 
 The feature set spans six portable families: **shot geometry**, **defender pressure** (distance, angle, closeout time, tight-contest counts), **shooter & defender kinematics**, **release mechanics** (height, speed, angle), **possession tempo** (shot clock, touch time, catch-and-shoot), **floor spacing**, and **soft player archetypes** from a GMM.
+
+Spacing and pressure are dynamic — a kinematic **space-control** model turns positions and velocities into who would reach each patch of floor first, revealing how a possession opens (and closes) the shooter's window:
+
+<p align="center">
+  <img src="assets/possession_spacing.gif" width="80%" alt="Animated space-control (time-to-control) heatmap for Curry's catch-and-shoot 3">
+  <br><sub><b>Space control over a possession</b> — blue = offense would arrive first, red = defense. Curry (yellow ring) springs open just before the catch.</sub>
+</p>
 
 ## Results
 
