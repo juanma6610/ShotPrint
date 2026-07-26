@@ -2,7 +2,8 @@
 <p align="center"><b>A portable, calibrated, <i>federated</i> shot quality model for the NBA from raw optical player tracking.</b></p>
 
 <p align="center">
-  <img src="assets/hero_possession.gif" width="88%" alt="SportVU tracking render — Curry catch-and-shoot 3, GSW @ CLE">
+  <img src="assets/hero_possession.gif" width="94%" alt="SportVU tracking reconstruction beside the broadcast — Curry catch-and-shoot 3, GSW @ CLE">
+  <br><sub>Raw optical tracking reconstructed (left) beside the broadcast footage (right) — Curry's catch-and-shoot 3, GSW @ CLE.</sub>
 </p>
 
 <p align="center">
