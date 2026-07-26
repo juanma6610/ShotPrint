@@ -72,15 +72,16 @@ A gradient-boosted model trained with **game-disjoint** splits, no game ever spa
 | Distance-only logistic | 0.2400 | 0.6728 | 0.603 |
 | **XGBoost (full features)** | **0.219** | **0.628** | **0.670** |
 
-<p align="center">
-  <img src="assets/calibration_diagram.png" width="60%" alt="Reliability diagram">
-  <br><sub><b>Calibration</b> — predicted probabilities track empirical make rates across the operating range.</sub>
-</p>
-
-<p align="center">
-  <img src="assets/shap_beeswarm.png" width="82%" alt="Feature attributions (SHAP)">
-  <br><sub><b>What the model uses</b> — distance dominates, then defender pressure, release mechanics, and archetypes.</sub>
-</p>
+<table>
+<tr>
+<td width="50%"><img src="assets/calibration_diagram.png" alt="Reliability diagram"></td>
+<td width="50%"><img src="assets/shap_beeswarm.png" alt="Feature attributions"></td>
+</tr>
+<tr>
+<td align="center"><sub><b>Calibration</b> — predicted probabilities track empirical make rates.</sub></td>
+<td align="center"><sub><b>What the model uses</b> — distance, then defender pressure, mechanics, archetypes.</sub></td>
+</tr>
+</table>
 
 ### Federated learning — the privacy cost is small
 
@@ -93,24 +94,25 @@ Training across the 30 teams as natural silos (non-IID by construction), the fed
 With a trustworthy P(make), a shot's value over an average shooter in the same situation is simply `POE = value × (outcome − P(make))`, computed **out of fold** so no player is flattered by the model training on their own shots.
 
 <p align="center">
+  <img src="assets/per_zone_poe.png" width="85%" alt="Per-zone POE decomposition">
+  <br><sub><b>Per-zone POE</b> — where each player creates or sheds expected points.</sub>
+</p>
+
+<p align="center">
   <img src="assets/lineup_poe_leaderboard.png" width="92%" alt="Lineup POE leaderboards">
   <br><sub><b>Five-man lineup POE</b> — best and worst offensive &amp; defensive units.</sub>
 </p>
 
-<p align="center">
-  <img src="assets/shot_heatmap_curry_lbj.png" width="80%" alt="Spatial shot charts">
-  <br><sub><b>Spatial shot charts</b> coloured by shot quality.</sub>
-</p>
-
-<p align="center">
-  <img src="assets/matchup_heatmap.png" width="66%" alt="Archetype matchup heatmap">
-  <br><sub><b>Archetype matchups</b> — which offensive styles beat which defensive ones.</sub>
-</p>
-
-<p align="center">
-  <img src="assets/per_zone_poe.png" width="85%" alt="Per-zone POE decomposition">
-  <br><sub><b>Per-zone POE</b> — where each player creates or sheds expected points.</sub>
-</p>
+<table>
+<tr>
+<td width="50%"><img src="assets/shot_heatmap_curry_lbj.png" alt="Spatial shot charts"></td>
+<td width="50%"><img src="assets/matchup_heatmap.png" alt="Archetype matchup heatmap"></td>
+</tr>
+<tr>
+<td align="center"><sub><b>Spatial shot charts</b> different players have different shot regimes.</sub></td>
+<td align="center"><sub><b>Archetype matchups</b> — which styles beat which.</sub></td>
+</tr>
+</table>
 
 
 ## Repository tour
