@@ -3,7 +3,7 @@
 
 <p align="center">
   <img src="assets/hero_possession.gif" width="94%" alt="SportVU tracking reconstruction beside the broadcast — Curry catch-and-shoot 3, GSW @ CLE">
-  <br><sub>Raw optical tracking reconstructed (left) beside the broadcast footage (right) — Curry's catch-and-shoot 3, GSW @ CLE.</sub>
+  <br><sub>Raw optical tracking reconstructed (left) beside the broadcast footage (right) — Curry's catch and shoot 3, GSW @ CLE.</sub>
 </p>
 
 <p align="center">
@@ -139,7 +139,7 @@ assets/              Figures used in this README
 
 ## Dataset
 
-The engineered shot-features table (≈98k shots × 48 columns) is published as a standalone dataset. The full column dictionary and module-level details live in **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)**.
+The engineered shot features table (≈98k shots × 48 columns) is published as a standalone dataset. The full column dictionary and module level details live in **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)**.
 📊 Kaggle: https://www.kaggle.com/datasets/juanmaoliver/shot-features/data
 
 
@@ -152,4 +152,4 @@ Thesis: *Reading the Floor — A Portable Federated Shot Quality Model from Opti
 - 📄 Thesis PDF: 
 - 📊 Kaggle: [JuanmaOliver](https://www.kaggle.com/juanmaoliver)
 
-<sub>Built on publicly posted SportVU tracking and NBA play-by-play data, for research and educational use. Please credit the original data sources.</sub>
+<sub>Built on publicly posted SportVU tracking and NBA play by play data, for research and educational use. Please credit the original data sources.</sub>
