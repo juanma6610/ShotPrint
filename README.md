@@ -1,5 +1,5 @@
 <h1 align="center">Reading the Floor</h1>
-<p align="center"><b>A portable, calibrated, <i>federated</i> shot-quality model for the NBA — built from raw optical player-tracking.</b></p>
+<p align="center"><b>A portable, calibrated, <i>federated</i> shot quality model for the NBA from raw optical player tracking.</b></p>
 
 <p align="center">
   <img src="assets/hero_possession.gif" width="88%" alt="SportVU tracking render — Curry catch-and-shoot 3, GSW @ CLE">
@@ -43,16 +43,15 @@ Some of the most valuable data in sports: practice tracking, biometrics, scheme 
 
 Every shot is reduced to **the exact game state at the moment of release**. The hardest part is recovering that release frame from the tracking stream, the PBP timestamp trails the true release by 1–2 seconds, so I detect the ball's arc apex and walk back to the frame where it leaves the shooter's hands.
 
-<table>
-<tr>
-<td width="50%"><img src="assets/release_frame_recovery.png" alt="Release-frame recovery"></td>
-<td width="50%"><img src="assets/shot_geometry_features.png" alt="Kinematic decomposition"></td>
-</tr>
-<tr>
-<td align="center"><sub><b>Release frame recovery</b> from the ball's vertical trajectory.</sub></td>
-<td align="center"><sub><b>Kinematics</b> decomposed parallel/perpendicular to the shot line.</sub></td>
-</tr>
-</table>
+<p align="center">
+  <img src="assets/release_frame_recovery.png" width="82%" alt="Release-frame recovery">
+  <br><sub><b>Release-frame recovery</b> from the ball's vertical trajectory.</sub>
+</p>
+
+<p align="center">
+  <img src="assets/shot_geometry_features.png" width="82%" alt="Shot geometry & kinematic features">
+  <br><sub><b>Shot geometry &amp; kinematics</b> decomposed parallel / perpendicular to the shot line.</sub>
+</p>
 
 The feature set spans six portable families: **shot geometry**, **defender pressure** (distance, angle, closeout time, tight-contest counts), **shooter & defender kinematics**, **release mechanics** (height, speed, angle), **possession tempo** (shot clock, touch time, catch-and-shoot), **floor spacing**, and **soft player archetypes** from a GMM.
 
@@ -73,16 +72,15 @@ A gradient-boosted model trained with **game-disjoint** splits, no game ever spa
 | Distance-only logistic | 0.2400 | 0.6728 | 0.603 |
 | **XGBoost (full features)** | **0.219** | **0.628** | **0.670** |
 
-<table>
-<tr>
-<td width="50%"><img src="assets/calibration_diagram.png" alt="Reliability diagram"></td>
-<td width="50%"><img src="assets/shap_beeswarm.png" alt="Feature attributions"></td>
-</tr>
-<tr>
-<td align="center"><sub><b>Calibration</b> — predicted probabilities track empirical make rates.</sub></td>
-<td align="center"><sub><b>What the model uses</b> — distance, then defender pressure, mechanics, archetypes.</sub></td>
-</tr>
-</table>
+<p align="center">
+  <img src="assets/calibration_diagram.png" width="60%" alt="Reliability diagram">
+  <br><sub><b>Calibration</b> — predicted probabilities track empirical make rates across the operating range.</sub>
+</p>
+
+<p align="center">
+  <img src="assets/shap_beeswarm.png" width="82%" alt="Feature attributions (SHAP)">
+  <br><sub><b>What the model uses</b> — distance dominates, then defender pressure, release mechanics, and archetypes.</sub>
+</p>
 
 ### Federated learning — the privacy cost is small
 
@@ -94,28 +92,26 @@ Training across the 30 teams as natural silos (non-IID by construction), the fed
 
 With a trustworthy P(make), a shot's value over an average shooter in the same situation is simply `POE = value × (outcome − P(make))`, computed **out of fold** so no player is flattered by the model training on their own shots.
 
-<table>
-<tr>
-<td width="50%"><img src="assets/lineup_poe_leaderboard.png" alt="Lineup POE leaderboards"></td>
-<td width="50%"><img src="assets/matchup_heatmap.png" alt="Archetype matchup heatmap"></td>
-</tr>
-<tr>
-<td align="center"><sub><b>Five-man lineup POE</b> — best/worst offensive & defensive units.</sub></td>
-<td align="center"><sub><b>Archetype matchups</b> — which styles beat which.</sub></td>
-</tr>
-<tr>
-<td width="50%"><img src="assets/shot_heatmap_curry_lbj.png" alt="Spatial shot charts"></td>
-<td width="50%"><img src="assets/per_zone_poe.png" alt="Per-zone POE decomposition"></td>
-</tr>
-<tr>
-<td align="center"><sub><b>Spatial shot charts</b> coloured by shot quality.</sub></td>
-<td align="center"><sub><b>Per-zone POE</b> — where each player creates or sheds points.</sub></td>
-</tr>
-</table>
+<p align="center">
+  <img src="assets/lineup_poe_leaderboard.png" width="92%" alt="Lineup POE leaderboards">
+  <br><sub><b>Five-man lineup POE</b> — best and worst offensive &amp; defensive units.</sub>
+</p>
 
-## Tech stack
+<p align="center">
+  <img src="assets/shot_heatmap_curry_lbj.png" width="80%" alt="Spatial shot charts">
+  <br><sub><b>Spatial shot charts</b> coloured by shot quality.</sub>
+</p>
 
-`Python` · `XGBoost` · `scikit-learn` · `Flower` (federated learning) · `pandas`/`NumPy`/`SciPy` · `Matplotlib` · `R` (archetype clustering) · SportVU optical tracking + NBA play-by-play.
+<p align="center">
+  <img src="assets/matchup_heatmap.png" width="66%" alt="Archetype matchup heatmap">
+  <br><sub><b>Archetype matchups</b> — which offensive styles beat which defensive ones.</sub>
+</p>
+
+<p align="center">
+  <img src="assets/per_zone_poe.png" width="85%" alt="Per-zone POE decomposition">
+  <br><sub><b>Per-zone POE</b> — where each player creates or sheds expected points.</sub>
+</p>
+
 
 ## Repository tour
 
