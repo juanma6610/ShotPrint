@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/XGBoost-gradient%20boosting-EC4E20">
   <img src="https://img.shields.io/badge/Flower-federated%20learning-30B6EF">
   <img src="https://img.shields.io/badge/scikit--learn-ML-F7931E?logo=scikitlearn&logoColor=white">
-  <img src="https://img.shields.io/badge/data-SportVU%2025Hz-1C092F">
+  <img src="https://img.shields.io/badge/NBA%2025Hz-1C092F">
   <img src="https://img.shields.io/badge/MSc%20thesis-KU%20Leuven-1D428A">
 </p>
 
@@ -44,16 +44,22 @@ Some of the most valuable data in sports: practice tracking, biometrics, scheme 
 Every shot is reduced to **the exact game state at the moment of release**. The hardest part is recovering that release frame from the tracking stream, the PBP timestamp trails the true release by 1–2 seconds, so I detect the ball's arc apex and walk back to the frame where it leaves the shooter's hands.
 
 <p align="center">
-  <img src="assets/release_frame_recovery.png" width="82%" alt="Release-frame recovery">
-  <br><sub><b>Release-frame recovery</b> from the ball's vertical trajectory.</sub>
+  <img src="assets/release_recovery_sidebyside.gif" width="92%" alt="Release-frame recovery synced with broadcast footage of Klay Thompson's catch-and-shoot 3">
+  <br><sub><b>Release-frame recovery, synced to the broadcast.</b> The algorithm finds the ball's arc apex and walks back to the release frame — here it lines up in real time with Klay Thompson's catch-and-shoot 3 (GSW @ HOU).</sub>
 </p>
+
+
+The feature set spans six portable families: **shot geometry**, **defender pressure** (distance, angle, closeout time, tight-contest counts), **shooter & defender kinematics**, **release mechanics** (height, speed, angle), **possession tempo** (shot clock, touch time, catch-and-shoot), **floor spacing**, and **soft player archetypes** from a GMM.
 
 <p align="center">
   <img src="assets/shot_geometry_features.png" width="82%" alt="Shot geometry & kinematic features">
   <br><sub><b>Shot geometry &amp; kinematics</b> decomposed parallel / perpendicular to the shot line.</sub>
 </p>
 
-The feature set spans six portable families: **shot geometry**, **defender pressure** (distance, angle, closeout time, tight-contest counts), **shooter & defender kinematics**, **release mechanics** (height, speed, angle), **possession tempo** (shot clock, touch time, catch-and-shoot), **floor spacing**, and **soft player archetypes** from a GMM.
+<p align="center">
+  <img src="assets/touch_time_recovery.png" width="82%" alt="Touch-time recovery">
+  <br><sub><b>Touch-time recovery</b> — seconds the shooter holds the ball before the shot, separating catch-and-shoot from off-the-dribble.</sub>
+</p>
 
 Spacing and pressure are dynamic, a kinematic **space control** model turns positions and velocities into who would reach each patch of floor first, revealing how a possession opens (and closes) the shooter's window:
 
