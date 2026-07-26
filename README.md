@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/XGBoost-gradient%20boosting-EC4E20">
   <img src="https://img.shields.io/badge/Flower-federated%20learning-30B6EF">
   <img src="https://img.shields.io/badge/scikit--learn-ML-F7931E?logo=scikitlearn&logoColor=white">
-  <img src="https://img.shields.io/badge/NBA-25Hz-C8102E?labelColor=1D428A" alt="NBA SportVU 25Hz">
+  <img src="https://img.shields.io/badge/NBA-C8102E?labelColor=1D428A" alt="NBA SportVU 25Hz">
   <img src="https://img.shields.io/badge/MSc%20thesis-KU%20Leuven-1D428A">
 </p>
 
