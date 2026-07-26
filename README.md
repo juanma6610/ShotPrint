@@ -45,7 +45,7 @@ Every shot is reduced to **the exact game state at the moment of release**. The 
 
 <p align="center">
   <img src="assets/release_recovery_sidebyside.gif" width="92%" alt="Release-frame recovery synced with broadcast footage of Klay Thompson's catch-and-shoot 3">
-  <br><sub><b>Release-frame recovery, synced to the broadcast.</b> The algorithm finds the ball's arc apex and walks back to the release frame — here it lines up in real time with Klay Thompson's catch-and-shoot 3 (GSW @ HOU).</sub>
+  <br><sub><b>Release frame recovery, synced to the broadcast.</b> The algorithm finds the ball's arc apex and walks back to the release frame — here it lines up in real time with Klay Thompson's catch and shoot 3 (GSW @ HOU).</sub>
 </p>
 
 
@@ -57,14 +57,14 @@ The feature set spans six portable families: **shot geometry**, **defender press
 </p>
 
 <p align="center">
-  <img src="assets/touch_time_recovery.png" width="82%" alt="Touch-time recovery">
-  <br><sub><b>Touch-time recovery</b> — seconds the shooter holds the ball before the shot, separating catch-and-shoot from off-the-dribble.</sub>
+  <img src="assets/touch_time_sidebyside.gif" width="92%" alt="Touch-time recovery synced with broadcast footage of Harden's pull-up 3">
+  <br><sub><b>Touch-time recovery, synced to the broadcast.</b> Touch time is how long the shooter holds the ball before shooting — here 5.24 s of Harden dribbling into a pull-up 3, catch to release, aligned in real time (GSW @ HOU).</sub>
 </p>
 
 Spacing and pressure are dynamic, a kinematic **space control** model turns positions and velocities into who would reach each patch of floor first, revealing how a possession opens (and closes) the shooter's window:
 
 <p align="center">
-  <img src="assets/possession_spacing.gif" width="80%" alt="Animated space-control (time-to-control) heatmap for Curry's catch-and-shoot 3">
+  <img src="assets/possession_spacing.png" width="80%" alt="Animated space-control (time-to-control) heatmap for Curry's catch-and-shoot 3">
   <br><sub><b>Space control over a possession</b> — blue = offense would arrive first, red = defense. Curry (yellow ring) springs open just before the catch.</sub>
 </p>
 
